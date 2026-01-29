@@ -71,11 +71,11 @@ class CentralMonitoramento(ctk.CTk):
         self.ips_unicos = self.gerar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.botoes_referencia = {}
-        self.status_rede = {}
 
         self.ip_selecionado = None
         self.camera_handlers = {}
         self.em_tela_cheia = False
+        self.slot_maximized = None
         self.arquivo_grid = os.path.join(os.path.expanduser("~"), "grid_config_abi.json")
         self.grid_cameras = self.carregar_grid()
         self.slot_selecionado = 0
@@ -169,10 +169,32 @@ class CentralMonitoramento(ctk.CTk):
         self.selecionar_slot(0)
         self.alternar_todos_streams()
         self.loop_exibicao()
-        threading.Thread(target=self.monitor_rede_seguro, daemon=True).start()
 
     # --- LÓGICA DO GRID ---
+    def maximizar_slot(self, index):
+        for i, frm in enumerate(self.slot_frames):
+            if i == index:
+                frm.grid_configure(row=0, column=0, rowspan=4, columnspan=5)
+            else:
+                frm.grid_forget()
+        self.slot_maximized = index
+
+    def restaurar_grid(self):
+        for i, frm in enumerate(self.slot_frames):
+            row, col = i // 5, i % 5
+            frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1)
+            frm.grid()
+        self.slot_maximized = None
+
     def selecionar_slot(self, index):
+        # Lógica de Maximizar/Restaurar
+        if self.slot_maximized == index:
+            self.restaurar_grid()
+        else:
+            if self.slot_maximized is not None:
+                self.restaurar_grid()
+            self.maximizar_slot(index)
+
         # Remove destaque do anterior
         self.slot_frames[self.slot_selecionado].configure(fg_color="#111", border_width=0)
 
@@ -231,8 +253,7 @@ class CentralMonitoramento(ctk.CTk):
         self.ip_selecionado = ip
 
         if ip_anterior_lateral and ip_anterior_lateral in self.botoes_referencia:
-            cor_rede = self.status_rede.get(ip_anterior_lateral, "transparent")
-            self.pintar_botao(ip_anterior_lateral, cor_rede)
+            self.pintar_botao(ip_anterior_lateral, "transparent")
 
         self.pintar_botao(ip, "#1F6AA5")
         self.entry_nome.delete(0, "end")
@@ -259,12 +280,12 @@ class CentralMonitoramento(ctk.CTk):
         """Aplica a cor, mas respeita a seleção azul."""
         if ip not in self.botoes_referencia: return
 
-        # Se este IP for o selecionado, FORÇA AZUL, ignora o monitor de rede
+        # Se este IP for o selecionado, FORÇA AZUL
         if ip == self.ip_selecionado:
             self.botoes_referencia[ip].configure(fg_color="#1F6AA5")
         else:
-            # Se não for o selecionado, aplica a cor solicitada (verde/vermelho/transparent)
-            self.botoes_referencia[ip].configure(fg_color=cor)
+            # Se não for o selecionado, usa cor transparente (padrão)
+            self.botoes_referencia[ip].configure(fg_color="transparent")
 
     # --- TELA CHEIA (MAXIMIZAÇÃO TOTAL) ---
     def entrar_tela_cheia(self):
@@ -355,25 +376,6 @@ class CentralMonitoramento(ctk.CTk):
         self.after(30, self.loop_exibicao)
 
     # --- UTILITÁRIOS E DADOS ---
-    def monitor_rede_seguro(self):
-        while True:
-            for ip in self.ips_unicos:
-                try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.settimeout(0.1)
-                    res = s.connect_ex((ip, 554))
-                    s.close()
-
-                    nova_cor = "#2E7D32" if res == 0 else "transparent"
-                    if res != 0 and self.status_rede.get(ip) == "#2E7D32": nova_cor = "#B71C1C"
-
-                    if self.status_rede.get(ip) != nova_cor:
-                        self.status_rede[ip] = nova_cor
-                        self.after(0, lambda i=ip, c=nova_cor: self.pintar_botao(i, c))
-                except: pass
-                time.sleep(0.01)
-            time.sleep(5)
-
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
         for ip, btn in self.botoes_referencia.items():
@@ -415,7 +417,6 @@ class CentralMonitoramento(ctk.CTk):
                                 command=lambda x=ip: self.selecionar_camera(x))
             btn.pack(fill="x", pady=2)
             self.botoes_referencia[ip] = btn
-            self.status_rede[ip] = "transparent"
 
 if __name__ == "__main__":
     app = CentralMonitoramento()
