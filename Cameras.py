@@ -271,16 +271,38 @@ class CentralMonitoramento(ctk.CTk):
         if self.em_tela_cheia: return
         self.em_tela_cheia = True
         self.attributes("-fullscreen", True)
+
         self.sidebar.grid_forget()
+        self.main_frame.grid_configure(column=0, columnspan=2)
+
         self.painel_topo.pack_forget()
         self.painel_base.pack_forget()
+        self.grid_frame.pack_forget()
         self.grid_frame.pack(expand=True, fill="both", padx=0, pady=0)
+
+        # Botão flutuante para sair
+        self.btn_sair_fs = ctk.CTkButton(self.main_frame, text="✖ SAIR TELA CHEIA",
+                                         width=150, height=40, fg_color="#c62828",
+                                         hover_color="#b71c1c", font=("Arial", 12, "bold"),
+                                         command=self.sair_tela_cheia)
+        self.btn_sair_fs.place(relx=0.98, rely=0.02, anchor="ne")
 
     def sair_tela_cheia(self):
         if not self.em_tela_cheia: return
         self.em_tela_cheia = False
         self.attributes("-fullscreen", False)
+
+        if hasattr(self, 'btn_sair_fs'):
+            self.btn_sair_fs.destroy()
+
         self.sidebar.grid(row=0, column=0, sticky="nsew")
+        self.main_frame.grid_configure(column=1, columnspan=1)
+
+        # Limpa e restaura ordem do pack
+        self.painel_topo.pack_forget()
+        self.painel_base.pack_forget()
+        self.grid_frame.pack_forget()
+
         self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
         self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10))
