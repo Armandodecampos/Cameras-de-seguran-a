@@ -130,6 +130,22 @@ class CentralMonitoramento(ctk.CTk):
                                        height=40, font=("Arial", 14, "bold"), command=self.alternar_todos_streams)
         self.btn_power.pack(side="left", expand=True, fill="x", padx=5)
 
+        self.btn_ligar_cam = ctk.CTkButton(self.painel_base, text="LIGAR CAM", fg_color="#2E7D32", hover_color="#1B5E20",
+                                          height=40, command=self.ligar_camera_selecionada)
+        self.btn_ligar_cam.pack(side="left", padx=5)
+
+        self.btn_desligar_cam = ctk.CTkButton(self.painel_base, text="DESLIGAR CAM", fg_color="#B71C1C", hover_color="#880E4F",
+                                             height=40, command=self.desligar_camera_selecionada)
+        self.btn_desligar_cam.pack(side="left", padx=5)
+
+        self.btn_ver_sel = ctk.CTkButton(self.painel_base, text="MAXIMIZAR", fg_color="#1F6AA5",
+                                        height=40, command=lambda: self.maximizar_slot(self.slot_selecionado))
+        self.btn_ver_sel.pack(side="left", padx=5)
+
+        self.btn_ver_todas = ctk.CTkButton(self.painel_base, text="GRID 20", fg_color="#444",
+                                          height=40, command=self.restaurar_grid)
+        self.btn_ver_todas.pack(side="left", padx=5)
+
         self.btn_limpar_slot = ctk.CTkButton(self.painel_base, text="LIMPAR SLOT", fg_color="#666",
                                             height=40, command=self.limpar_slot_atual)
         self.btn_limpar_slot.pack(side="left", padx=5)
@@ -247,6 +263,20 @@ class CentralMonitoramento(ctk.CTk):
             if ip and ip not in self.camera_handlers:
                 self.iniciar_conexao_assincrona(ip)
 
+    def ligar_camera_selecionada(self):
+        ip = self.grid_cameras[self.slot_selecionado]
+        if ip:
+            self.iniciar_conexao_assincrona(ip)
+
+    def desligar_camera_selecionada(self):
+        ip = self.grid_cameras[self.slot_selecionado]
+        if ip and ip in self.camera_handlers:
+            handler = self.camera_handlers[ip]
+            if hasattr(handler, 'parar'):
+                handler.parar()
+            del self.camera_handlers[ip]
+            self.slot_labels[self.slot_selecionado].configure(image=None, text=f"DESLIGADO\n{ip}")
+
     # --- LÓGICA DE SELEÇÃO DE CÂMERA (CORRIGIDA) ---
     def selecionar_camera(self, ip):
         ip_anterior_lateral = self.ip_selecionado
@@ -347,7 +377,11 @@ class CentralMonitoramento(ctk.CTk):
             if ip in self.camera_handlers: del self.camera_handlers[ip]
 
     def loop_exibicao(self):
-        for i, ip in enumerate(self.grid_cameras):
+        # OTIMIZAÇÃO: Processa apenas os slots visíveis
+        indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
+
+        for i in indices:
+            ip = self.grid_cameras[i]
             if not ip: continue
             handler = self.camera_handlers.get(ip)
             if not handler or handler == "CONECTANDO": continue
@@ -367,13 +401,15 @@ class CentralMonitoramento(ctk.CTk):
 
                     if w < 10: w, h = 300, 200
 
+                    # OTIMIZAÇÃO: Redimensiona antes de converter cores (mais rápido)
                     frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
                     img_tk = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)))
                     self.slot_labels[i].configure(image=img_tk, text="")
                     self.slot_labels[i].image = img_tk
                 except: pass
 
-        self.after(30, self.loop_exibicao)
+        # OTIMIZAÇÃO: Intervalo de 40ms (25 FPS) para poupar CPU
+        self.after(40, self.loop_exibicao)
 
     # --- UTILITÁRIOS E DADOS ---
     def filtrar_lista(self):
