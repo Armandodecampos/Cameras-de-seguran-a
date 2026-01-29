@@ -1,3 +1,7 @@
+import os
+# Otimização FFMPEG para baixo delay
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+
 import cv2
 import customtkinter as ctk
 from PIL import Image, ImageTk
@@ -9,8 +13,9 @@ import socket
 
 # --- CLASSE DE VÍDEO OTIMIZADA (SEM TRAVAMENTOS) ---
 class CameraHandler:
-    def __init__(self, url):
+    def __init__(self, url, channel=102):
         self.url = url
+        self.channel = channel
         self.cap = None
         self.rodando = False
         self.frame_atual = None
@@ -73,6 +78,7 @@ class CentralMonitoramento(ctk.CTk):
         self.botoes_referencia = {}
 
         self.ip_selecionado = None
+        self.ip_pre_selecionado = None
         self.camera_handlers = {}
         self.em_tela_cheia = False
         self.slot_maximized = None
@@ -184,21 +190,57 @@ class CentralMonitoramento(ctk.CTk):
                 frm.grid_forget()
         self.slot_maximized = index
 
+        # Aumenta qualidade da câmera maximizada para Main Stream (101)
+        ip = self.grid_cameras[index]
+        self.trocar_qualidade(ip, 101)
+
     def restaurar_grid(self):
         for i, frm in enumerate(self.slot_frames):
             row, col = i // 5, i % 5
             frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1)
             frm.grid()
+
+        # Volta qualidade para Sub Stream (102) para todas no grid
+        if self.slot_maximized is not None:
+            ip = self.grid_cameras[self.slot_maximized]
+            self.trocar_qualidade(ip, 102)
+
         self.slot_maximized = None
 
     def selecionar_slot(self, index):
-        # Lógica de Maximizar/Restaurar
-        if self.slot_maximized == index:
-            self.restaurar_grid()
+        # Se houver uma câmera pré-selecionada na lista lateral, atribui ela a este slot
+        if self.ip_pre_selecionado:
+            ip = self.ip_pre_selecionado
+            ip_antigo_slot = self.grid_cameras[index]
+
+            self.grid_cameras[index] = ip
+            self.slot_labels[index].configure(image=None, text=f"CONECTANDO\n{ip}")
+            self.salvar_grid()
+
+            # Limpa handler antigo se não estiver mais em uso
+            if ip_antigo_slot and ip_antigo_slot != ip and ip_antigo_slot not in self.grid_cameras:
+                if ip_antigo_slot in self.camera_handlers:
+                    if hasattr(self.camera_handlers[ip_antigo_slot], 'parar'):
+                        self.camera_handlers[ip_antigo_slot].parar()
+                    del self.camera_handlers[ip_antigo_slot]
+
+            self.iniciar_conexao_assincrona(ip, channel=102)
+
+            # Limpa pré-seleção
+            self.pintar_botao(self.ip_pre_selecionado, False)
+            self.ip_pre_selecionado = None
+            self.atualizar_botoes_controle()
+            return
+
+        # Lógica de Maximizar/Restaurar (apenas se clicar no mesmo slot selecionado)
+        if self.slot_selecionado == index:
+            if self.slot_maximized == index:
+                self.restaurar_grid()
+            else:
+                self.maximizar_slot(index)
         else:
             if self.slot_maximized is not None:
                 self.restaurar_grid()
-            self.maximizar_slot(index)
 
         # Remove destaque do anterior
         self.slot_frames[self.slot_selecionado].configure(fg_color="#111", border_width=0)
@@ -213,9 +255,9 @@ class CentralMonitoramento(ctk.CTk):
             self.ip_selecionado = ip
             self.entry_nome.delete(0, "end")
             self.entry_nome.insert(0, self.dados_cameras.get(ip, ""))
-            # Pinta o botão na lateral
+            # Marca na lista lateral que esta câmera está "ativa" (apenas visual)
             if ip in self.botoes_referencia:
-                self.pintar_botao(ip, "#1F6AA5")
+                self.pintar_botao(ip, True)
 
         self.atualizar_botoes_controle()
 
@@ -251,15 +293,31 @@ class CentralMonitoramento(ctk.CTk):
         return [None] * 20
 
     def alternar_todos_streams(self):
-        # Liga todas as câmeras que estão no grid mas não estão rodando
+        # Liga todas as câmeras que estão no grid mas não estão rodando (Qualidade Baixa)
         for ip in set(self.grid_cameras):
             if ip and ip not in self.camera_handlers:
-                self.iniciar_conexao_assincrona(ip)
+                self.iniciar_conexao_assincrona(ip, channel=102)
+
+    def trocar_qualidade(self, ip, channel):
+        if not ip: return
+        handler = self.camera_handlers.get(ip)
+        if handler and isinstance(handler, CameraHandler) and handler.channel == channel:
+            return
+
+        # Para o atual se existir
+        if handler and hasattr(handler, 'parar'):
+            handler.parar()
+
+        if ip in self.camera_handlers:
+            del self.camera_handlers[ip]
+
+        # Reinicia com nova qualidade
+        self.iniciar_conexao_assincrona(ip, channel)
 
     def ligar_camera_selecionada(self):
         ip = self.grid_cameras[self.slot_selecionado]
         if ip:
-            self.iniciar_conexao_assincrona(ip)
+            self.iniciar_conexao_assincrona(ip, channel=102)
 
     def desligar_camera_selecionada(self):
         ip = self.grid_cameras[self.slot_selecionado]
@@ -306,44 +364,27 @@ class CentralMonitoramento(ctk.CTk):
 
     # --- LÓGICA DE SELEÇÃO DE CÂMERA (CORRIGIDA) ---
     def selecionar_camera(self, ip):
-        ip_anterior_lateral = self.ip_selecionado
-        self.ip_selecionado = ip
+        # Desmarca anterior
+        if self.ip_pre_selecionado:
+            self.pintar_botao(self.ip_pre_selecionado, False)
 
-        if ip_anterior_lateral and ip_anterior_lateral in self.botoes_referencia:
-            self.pintar_botao(ip_anterior_lateral, "transparent")
+        # Define nova pré-seleção
+        self.ip_pre_selecionado = ip
+        self.pintar_botao(ip, True)
 
-        self.pintar_botao(ip, "#1F6AA5")
+        # Apenas atualiza o nome na entrada para referência
         self.entry_nome.delete(0, "end")
         self.entry_nome.insert(0, self.dados_cameras.get(ip, ""))
 
-        # Atribui ao slot selecionado e evita vazamento de conexões
-        idx = self.slot_selecionado
-        ip_antigo_slot = self.grid_cameras[idx]
-        self.grid_cameras[idx] = ip
-        self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
-        self.salvar_grid()
-
-        # Se o IP antigo não estiver mais em nenhum slot, encerra o handler
-        if ip_antigo_slot and ip_antigo_slot != ip and ip_antigo_slot not in self.grid_cameras:
-            if ip_antigo_slot in self.camera_handlers:
-                if hasattr(self.camera_handlers[ip_antigo_slot], 'parar'):
-                    self.camera_handlers[ip_antigo_slot].parar()
-                del self.camera_handlers[ip_antigo_slot]
-
-        # Inicia conexão se necessário
-        self.iniciar_conexao_assincrona(ip)
-        self.atualizar_botoes_controle()
-
-    def pintar_botao(self, ip, cor):
-        """Aplica a cor, mas respeita a seleção azul."""
+    def pintar_botao(self, ip, selecionado):
+        """Aplica borda para indicar seleção."""
         if ip not in self.botoes_referencia: return
+        btn = self.botoes_referencia[ip]
 
-        # Se este IP for o selecionado, FORÇA AZUL
-        if ip == self.ip_selecionado:
-            self.botoes_referencia[ip].configure(fg_color="#1F6AA5")
+        if selecionado:
+            btn.configure(border_width=2, border_color="#1F6AA5")
         else:
-            # Se não for o selecionado, usa cor transparente (padrão)
-            self.botoes_referencia[ip].configure(fg_color="transparent")
+            btn.configure(border_width=1, border_color="#333")
 
     # --- TELA CHEIA (MAXIMIZAÇÃO TOTAL) ---
     def entrar_tela_cheia(self):
@@ -387,14 +428,16 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10))
 
     # --- STREAMING ---
-    def iniciar_conexao_assincrona(self, ip):
+    def iniciar_conexao_assincrona(self, ip, channel=102):
         if not ip or ip in self.camera_handlers: return
         self.camera_handlers[ip] = "CONECTANDO"
-        threading.Thread(target=self._thread_conectar, args=(ip,), daemon=True).start()
+        threading.Thread(target=self._thread_conectar, args=(ip, channel), daemon=True).start()
 
-    def _thread_conectar(self, ip):
-        url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/101"
-        nova_cam = CameraHandler(url)
+    def _thread_conectar(self, ip, channel=102):
+        # 101 = Qualidade Alta (Main Stream)
+        # 102 = Qualidade Baixa (Sub Stream - Mais rápido/menos delay)
+        url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{channel}"
+        nova_cam = CameraHandler(url, channel=channel)
         sucesso = nova_cam.iniciar()
         self.after(0, lambda: self._pos_conexao(sucesso, nova_cam, ip))
 
