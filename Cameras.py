@@ -76,7 +76,6 @@ class CentralMonitoramento(ctk.CTk):
         self.ip_selecionado = None
         self.camera_handlers = {}
         self.em_tela_cheia = False
-        self.id_request_atual = 0
         self.arquivo_grid = os.path.join(os.path.expanduser("~"), "grid_config_abi.json")
         self.grid_cameras = self.carregar_grid()
         self.slot_selecionado = 0
@@ -148,6 +147,7 @@ class CentralMonitoramento(ctk.CTk):
             row, col = i // 5, i % 5
             frm = ctk.CTkFrame(self.grid_frame, fg_color="#111", corner_radius=2, border_width=0)
             frm.grid(row=row, column=col, padx=1, pady=1, sticky="nsew")
+            frm.pack_propagate(False) # Impede que o frame mude de tamanho com a imagem
 
             lbl = ctk.CTkLabel(frm, text=f"ESPAÇO {i+1}", corner_radius=0)
             lbl.pack(expand=True, fill="both")
@@ -312,8 +312,16 @@ class CentralMonitoramento(ctk.CTk):
             frame = handler.pegar_frame()
             if frame is not None:
                 try:
-                    w = self.slot_labels[i].winfo_width()
-                    h = self.slot_labels[i].winfo_height()
+                    # Usa o tamanho do Frame (fixo pelo grid) em vez do Label
+                    w = self.slot_frames[i].winfo_width()
+                    h = self.slot_frames[i].winfo_height()
+
+                    # Desconta bordas se houver
+                    bw = self.slot_frames[i].cget("border_width")
+                    if bw > 0:
+                        w -= 2*bw
+                        h -= 2*bw
+
                     if w < 10: w, h = 300, 200
 
                     frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
