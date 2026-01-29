@@ -142,17 +142,30 @@ class CentralMonitoramento(ctk.CTk):
         for i in range(4): self.grid_frame.grid_rowconfigure(i, weight=1)
         for i in range(5): self.grid_frame.grid_columnconfigure(i, weight=1)
 
+        self.slot_frames = []
         self.slot_labels = []
         for i in range(20):
             row, col = i // 5, i % 5
-            lbl = ctk.CTkLabel(self.grid_frame, text=f"ESPAÇO {i+1}",
-                               fg_color="#111", corner_radius=2)
-            lbl.grid(row=row, column=col, padx=1, pady=1, sticky="nsew")
+            frm = ctk.CTkFrame(self.grid_frame, fg_color="#111", corner_radius=2, border_width=0)
+            frm.grid(row=row, column=col, padx=1, pady=1, sticky="nsew")
+
+            lbl = ctk.CTkLabel(frm, text=f"ESPAÇO {i+1}", corner_radius=0)
+            lbl.pack(expand=True, fill="both")
+
+            # Click binding on both frame and label
+            frm.bind("<Button-1>", lambda e, idx=i: self.selecionar_slot(idx))
             lbl.bind("<Button-1>", lambda e, idx=i: self.selecionar_slot(idx))
+
+            self.slot_frames.append(frm)
             self.slot_labels.append(lbl)
 
         # Inicialização
         self.criar_botoes_iniciais()
+
+        # Restaura textos do grid
+        for i, ip in enumerate(self.grid_cameras):
+            if ip: self.slot_labels[i].configure(text=f"CARREGANDO\n{ip}")
+
         self.selecionar_slot(0)
         self.alternar_todos_streams()
         self.loop_exibicao()
@@ -161,11 +174,11 @@ class CentralMonitoramento(ctk.CTk):
     # --- LÓGICA DO GRID ---
     def selecionar_slot(self, index):
         # Remove destaque do anterior
-        self.slot_labels[self.slot_selecionado].configure(fg_color="#111", border_width=0)
+        self.slot_frames[self.slot_selecionado].configure(fg_color="#111", border_width=0)
 
         # Define novo slot
         self.slot_selecionado = index
-        self.slot_labels[index].configure(fg_color="#1f538d", border_width=2, border_color="#FFF")
+        self.slot_frames[index].configure(fg_color="#1f538d", border_width=2, border_color="#FFF")
 
         # Se houver uma câmera no slot, seleciona ela na lista lateral para exibir o nome
         ip = self.grid_cameras[index]
@@ -229,6 +242,7 @@ class CentralMonitoramento(ctk.CTk):
         idx = self.slot_selecionado
         ip_antigo_slot = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
+        self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
         self.salvar_grid()
 
         # Se o IP antigo não estiver mais em nenhum slot, encerra o handler
