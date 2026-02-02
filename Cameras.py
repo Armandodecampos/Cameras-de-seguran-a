@@ -194,7 +194,7 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_frame.pack_configure(padx=0, pady=0)
         for i, frm in enumerate(self.slot_frames):
             if i == index:
-                frm.grid_configure(row=0, column=0, rowspan=4, columnspan=5, padx=0, pady=0)
+                frm.grid_configure(row=0, column=0, rowspan=4, columnspan=5, padx=0, pady=0, sticky="nsew")
                 frm.configure(corner_radius=0)
             else:
                 frm.grid_forget()
@@ -215,9 +215,6 @@ class CentralMonitoramento(ctk.CTk):
 
         if dist < 15: # Threshold para considerar como clique
             self.selecionar_slot(index)
-            # NOVO: Se tiver câmera, alterna (maximiza/restaura) ao clicar
-            if self.grid_cameras[index]:
-                self.toggle_grid_layout()
         else:
             target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
             if target_idx is not None and target_idx != index:
@@ -253,7 +250,7 @@ class CentralMonitoramento(ctk.CTk):
 
         for i, frm in enumerate(self.slot_frames):
             row, col = i // 5, i % 5
-            frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1, padx=1, pady=1)
+            frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1, padx=1, pady=1, sticky="nsew")
             frm.configure(corner_radius=2)
             frm.grid()
         self.slot_maximized = None
@@ -413,7 +410,7 @@ class CentralMonitoramento(ctk.CTk):
 
         # Remove espaços entre câmeras
         for frm in self.slot_frames:
-            frm.grid_configure(padx=0, pady=0)
+            frm.grid_configure(padx=0, pady=0, sticky="nsew")
             frm.configure(corner_radius=0)
 
         # Botão flutuante para sair
@@ -436,7 +433,7 @@ class CentralMonitoramento(ctk.CTk):
 
         # Restaura espaços entre câmeras
         for frm in self.slot_frames:
-            frm.grid_configure(padx=1, pady=1)
+            frm.grid_configure(padx=1, pady=1, sticky="nsew")
             frm.configure(corner_radius=2)
 
         # Limpa e restaura ordem do pack
