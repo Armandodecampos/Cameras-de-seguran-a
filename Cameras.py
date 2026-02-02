@@ -300,49 +300,40 @@ class CentralMonitoramento(ctk.CTk):
 
     def limpar_slot_atual(self):
         self.press_data = None
-        # Deferir para garantir que o clique do botão seja processado
-        self.after(100, self._confirmar_e_limpar_slot)
-
-    def _confirmar_e_limpar_slot(self):
-        if not messagebox.askyesno("Confirmar", "Você realmente deseja deletar?", parent=self):
-            self.focus_force()
-            return
-
         idx = self.slot_selecionado
         ip_antigo = self.grid_cameras[idx]
-        self.grid_cameras[idx] = None
         
-        # Resetar texto para "ESPAÇO X" e limpar imagem
+        # 1. Reset total do slot no grid
+        self.grid_cameras[idx] = None
         self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
-        self.slot_labels[idx].image = None
-        self.salvar_grid()
+        if hasattr(self.slot_labels[idx], 'image'):
+            self.slot_labels[idx].image = None
 
-        # Se o IP antigo não estiver mais em nenhum slot, encerra o handler
+        # 2. Gerenciamento de conexão: Para o stream se não estiver em mais nenhum slot
         if ip_antigo and ip_antigo not in self.grid_cameras:
             if ip_antigo in self.camera_handlers:
-                if hasattr(self.camera_handlers[ip_antigo], 'parar'):
-                    self.camera_handlers[ip_antigo].parar()
+                try:
+                    if hasattr(self.camera_handlers[ip_antigo], 'parar'):
+                        self.camera_handlers[ip_antigo].parar()
+                except: pass
                 del self.camera_handlers[ip_antigo]
 
-        # Limpa seleção lateral antes de invalidar o IP
+        # 3. Limpeza de seleção: Se a câmera removida era a selecionada, limpa destaque
         if self.ip_selecionado:
             self.pintar_botao(self.ip_selecionado, "transparent")
+            self.ip_selecionado = None
+            self.entry_nome.delete(0, "end")
 
-        self.ip_selecionado = None
-        self.entry_nome.delete(0, "end")
-        
-        # Se estava maximizado neste slot, restaura o grid para ver o espaço vazio
+        # 4. Interface: Se estava maximizado, restaura o grid
         if self.slot_maximized == idx:
             self.restaurar_grid()
 
+        self.salvar_grid()
         self.atualizar_botoes_controle()
 
-        # Restauração agressiva de foco e interação
-        self.grab_release()
-        self.update_idletasks()
+        # 5. Força foco e atualização para evitar travamentos de interface
+        self.update()
         self.focus_force()
-        self.after(100, self.focus_force)
-        self.after(200, self.focus_force)
 
     def salvar_grid(self):
         try:
