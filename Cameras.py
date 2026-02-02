@@ -190,9 +190,11 @@ class CentralMonitoramento(ctk.CTk):
 
     # --- LÓGICA DO GRID ---
     def maximizar_slot(self, index):
+        self.grid_frame.pack_configure(padx=0, pady=0)
         for i, frm in enumerate(self.slot_frames):
             if i == index:
-                frm.grid_configure(row=0, column=0, rowspan=4, columnspan=5)
+                frm.grid_configure(row=0, column=0, rowspan=4, columnspan=5, padx=0, pady=0)
+                frm.configure(corner_radius=0)
             else:
                 frm.grid_forget()
         self.slot_maximized = index
@@ -241,12 +243,14 @@ class CentralMonitoramento(ctk.CTk):
         return None
 
     def restaurar_grid(self):
+        self.grid_frame.pack_configure(padx=10, pady=(0, 10))
         # Identifica câmera que estava em foco para reduzir qualidade
         ip_foco = self.grid_cameras[self.slot_maximized] if self.slot_maximized is not None else None
 
         for i, frm in enumerate(self.slot_frames):
             row, col = i // 5, i % 5
-            frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1)
+            frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1, padx=1, pady=1)
+            frm.configure(corner_radius=2)
             frm.grid()
         self.slot_maximized = None
 
@@ -279,6 +283,7 @@ class CentralMonitoramento(ctk.CTk):
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = None
         self.slot_labels[idx].configure(image=None, text="")
+        self.slot_labels[idx].image = None
         self.salvar_grid()
 
         # Se o IP antigo não estiver mais em nenhum slot, encerra o handler
@@ -324,6 +329,7 @@ class CentralMonitoramento(ctk.CTk):
                 handler.parar()
             del self.camera_handlers[ip]
             self.slot_labels[self.slot_selecionado].configure(image=None, text="")
+            self.slot_labels[self.slot_selecionado].image = None
 
     def atualizar_botoes_controle(self):
         # Atualiza botão de Câmera (Ligar/Desligar)
