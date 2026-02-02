@@ -209,30 +209,32 @@ class CentralMonitoramento(ctk.CTk):
 
     def ao_soltar_slot(self, event, index):
         if not self.press_data: return
+        try:
+            dist = ((event.x_root - self.press_data["x"])**2 + (event.y_root - self.press_data["y"])**2)**0.5
 
-        dist = ((event.x_root - self.press_data["x"])**2 + (event.y_root - self.press_data["y"])**2)**0.5
+            if dist < 15: # Threshold para considerar como clique
+                self.selecionar_slot(index)
+            else:
+                target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
+                if target_idx is not None and target_idx != index:
+                    # Troca as câmeras no grid
+                    self.grid_cameras[index], self.grid_cameras[target_idx] = \
+                        self.grid_cameras[target_idx], self.grid_cameras[index]
 
-        if dist < 15: # Threshold para considerar como clique
-            self.selecionar_slot(index)
-        else:
-            target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
-            if target_idx is not None and target_idx != index:
-                # Troca as câmeras no grid
-                self.grid_cameras[index], self.grid_cameras[target_idx] = \
-                    self.grid_cameras[target_idx], self.grid_cameras[index]
+                    # Atualiza labels caso não tenha vídeo rodando
+                    for idx in [index, target_idx]:
+                        ip = self.grid_cameras[idx]
+                        if not ip:
+                            self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+                            self.slot_labels[idx].image = None
+                        elif ip not in self.camera_handlers:
+                            self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
+                            self.slot_labels[idx].image = None
 
-                # Atualiza labels caso não tenha vídeo rodando
-                for idx in [index, target_idx]:
-                    ip = self.grid_cameras[idx]
-                    if not ip:
-                        self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
-                    elif ip not in self.camera_handlers:
-                        self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
-
-                self.salvar_grid()
-                self.selecionar_slot(target_idx)
-
-        self.press_data = None
+                    self.salvar_grid()
+                    self.selecionar_slot(target_idx)
+        finally:
+            self.press_data = None
 
     def encontrar_slot_por_coords(self, x_root, y_root):
         for i, frm in enumerate(self.slot_frames):
@@ -323,13 +325,13 @@ class CentralMonitoramento(ctk.CTk):
 
     def desligar_camera_selecionada(self):
         ip = self.grid_cameras[self.slot_selecionado]
+        self.slot_labels[self.slot_selecionado].configure(image=None, text="")
+        self.slot_labels[self.slot_selecionado].image = None
         if ip and ip in self.camera_handlers:
             handler = self.camera_handlers[ip]
             if hasattr(handler, 'parar'):
                 handler.parar()
             del self.camera_handlers[ip]
-            self.slot_labels[self.slot_selecionado].configure(image=None, text="")
-            self.slot_labels[self.slot_selecionado].image = None
 
     def atualizar_botoes_controle(self):
         # Atualiza botão de Câmera (Ligar/Desligar)
@@ -382,6 +384,7 @@ class CentralMonitoramento(ctk.CTk):
         ip_antigo_slot = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
         self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
+        self.slot_labels[idx].image = None
         self.salvar_grid()
 
         # Se o IP antigo não estiver mais em nenhum slot, encerra o handler
@@ -470,7 +473,10 @@ class CentralMonitoramento(ctk.CTk):
                 self.iniciar_conexao_assincrona(ip, novo_canal)
 
     def iniciar_conexao_assincrona(self, ip, canal=102):
-        if not ip or ip in self.camera_handlers: return
+        if not ip: return
+        # Se já estiver conectando, permite tentar novamente se for manual (pode ajudar a destravar)
+        if ip in self.camera_handlers and self.camera_handlers[ip] != "CONECTANDO": return
+
         self.camera_handlers[ip] = "CONECTANDO"
         threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
@@ -491,14 +497,22 @@ class CentralMonitoramento(ctk.CTk):
         # OTIMIZAÇÃO: Processa apenas os slots visíveis
         indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
 
+        # Cache de frames por IP para evitar múltiplas chamadas a pegar_frame()
+        frames_por_ip = {}
+
         for i in indices:
             ip = self.grid_cameras[i]
             if not ip: continue
             handler = self.camera_handlers.get(ip)
             if not handler or handler == "CONECTANDO": continue
 
-            # Só processa se houver um frame novo (otimiza CPU da thread principal)
-            frame = handler.pegar_frame()
+            # Tenta pegar do cache, senão tenta do handler
+            if ip in frames_por_ip:
+                frame = frames_por_ip[ip]
+            else:
+                frame = handler.pegar_frame()
+                frames_por_ip[ip] = frame
+
             if frame is not None:
                 try:
                     # Usa o tamanho do Frame (fixo pelo grid) em vez do Label
