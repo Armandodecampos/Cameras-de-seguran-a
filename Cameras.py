@@ -263,7 +263,10 @@ class CentralMonitoramento(ctk.CTk):
 
     def selecionar_slot(self, index):
         # Remove destaque do anterior
-        self.slot_frames[self.slot_selecionado].configure(fg_color="#111", border_width=0)
+        try:
+            self.slot_frames[self.slot_selecionado].configure(fg_color="#111", border_width=0)
+        except Exception as e:
+            print(f"Erro ao deselecionar slot: {e}")
 
         # Guarda IP anterior para limpar destaque lateral
         ip_anterior = self.ip_selecionado
@@ -306,8 +309,6 @@ class CentralMonitoramento(ctk.CTk):
         # 1. Reset total do slot no grid
         self.grid_cameras[idx] = None
         self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
-        if hasattr(self.slot_labels[idx], 'image'):
-            self.slot_labels[idx].image = None
 
         # 2. Gerenciamento de conexão: Para o stream se não estiver em mais nenhum slot
         if ip_antigo and ip_antigo not in self.grid_cameras:
@@ -522,9 +523,9 @@ class CentralMonitoramento(ctk.CTk):
                     cv2.putText(frame_resized, ip, pos, font, scale, (0, 0, 0), 2, cv2.LINE_AA)
                     cv2.putText(frame_resized, ip, pos, font, scale, (255, 255, 255), 1, cv2.LINE_AA)
 
-                    img_tk = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)))
-                    self.slot_labels[i].configure(image=img_tk, text="")
-                    self.slot_labels[i].image = img_tk
+                    pil_img = Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB))
+                    ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
+                    self.slot_labels[i].configure(image=ctk_img, text="")
                 except: pass
 
         # OTIMIZAÇÃO: Intervalo de 40ms (25 FPS) para poupar CPU
