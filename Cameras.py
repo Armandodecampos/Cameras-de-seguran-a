@@ -1,6 +1,6 @@
 import os
-# Otimização FFMPEG para baixo delay e conexão rápida
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;analyzeduration;100000;probesize;100000;stimeout;3000000;fflags;nobuffer"
+# Otimização FFMPEG para baixo delay e conexão confiável
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;1000000;probesize;1000000"
 
 import cv2
 import customtkinter as ctk
@@ -24,21 +24,28 @@ class CameraHandler:
         self.conectado = False
 
     def iniciar(self):
-        try:
-            # Buffersize=1 e backend FFMPEG para menor latência
-            self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        for tentativa in range(3):
+            try:
+                # Buffersize=1 e backend FFMPEG para menor latência
+                self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-            if self.cap.isOpened():
-                self.rodando = True
-                self.conectado = True
-                threading.Thread(target=self.loop_leitura, daemon=True).start()
-                return True
-            else:
-                return False
-        except Exception as e:
-            print(f"Erro driver: {e}")
-            return False
+                if self.cap.isOpened():
+                    self.rodando = True
+                    self.conectado = True
+                    threading.Thread(target=self.loop_leitura, daemon=True).start()
+                    return True
+                else:
+                    if self.cap:
+                        self.cap.release()
+                    print(f"Tentativa {tentativa + 1} falhou para {self.url}")
+                    if tentativa < 2:
+                        time.sleep(1)
+            except Exception as e:
+                print(f"Erro na tentativa {tentativa + 1}: {e}")
+                if tentativa < 2:
+                    time.sleep(1)
+        return False
 
     def loop_leitura(self):
         while self.rodando and self.cap.isOpened():
@@ -464,8 +471,9 @@ class CentralMonitoramento(ctk.CTk):
             frame = handler.pegar_frame()
             if frame is not None:
                 try:
-                    # Reset do flag ANTES de processar para evitar perda de frames se o processamento for lento
-                    handler.frame_novo = False
+                    # Reset do flag com lock para garantir consistência
+                    with handler.lock:
+                        handler.frame_novo = False
 
                     # Usa o tamanho do Frame (fixo pelo grid) em vez do Label
                     w = self.slot_frames[i].winfo_width()
