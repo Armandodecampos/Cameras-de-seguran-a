@@ -1,6 +1,6 @@
 import os
-# Otimização FFMPEG para baixo delay e conexão confiável
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;1000000;probesize;1000000"
+# Otimização FFMPEG para delay zero e conexão instantânea
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
 
 import cv2
 import customtkinter as ctk
@@ -40,11 +40,11 @@ class CameraHandler:
                         self.cap.release()
                     print(f"Tentativa {tentativa + 1} falhou para {self.url}")
                     if tentativa < 2:
-                        time.sleep(1)
+                        time.sleep(0.2)
             except Exception as e:
                 print(f"Erro na tentativa {tentativa + 1}: {e}")
                 if tentativa < 2:
-                    time.sleep(1)
+                    time.sleep(0.2)
         return False
 
     def loop_leitura(self):
