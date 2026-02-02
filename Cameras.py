@@ -300,6 +300,10 @@ class CentralMonitoramento(ctk.CTk):
 
     def limpar_slot_atual(self):
         self.press_data = None
+        # Deferir para garantir que o clique do botão seja processado
+        self.after(100, self._confirmar_e_limpar_slot)
+
+    def _confirmar_e_limpar_slot(self):
         if not messagebox.askyesno("Confirmar", "Você realmente deseja deletar?", parent=self):
             self.focus_force()
             return
@@ -308,7 +312,7 @@ class CentralMonitoramento(ctk.CTk):
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = None
         
-        # CORREÇÃO: Resetar texto para "ESPAÇO X" e limpar imagem
+        # Resetar texto para "ESPAÇO X" e limpar imagem
         self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
         self.slot_labels[idx].image = None
         self.salvar_grid()
@@ -320,7 +324,7 @@ class CentralMonitoramento(ctk.CTk):
                     self.camera_handlers[ip_antigo].parar()
                 del self.camera_handlers[ip_antigo]
 
-        # CORREÇÃO: Limpa seleção lateral antes de invalidar o IP
+        # Limpa seleção lateral antes de invalidar o IP
         if self.ip_selecionado:
             self.pintar_botao(self.ip_selecionado, "transparent")
 
@@ -332,8 +336,13 @@ class CentralMonitoramento(ctk.CTk):
             self.restaurar_grid()
 
         self.atualizar_botoes_controle()
-        self.update()
+
+        # Restauração agressiva de foco e interação
+        self.grab_release()
+        self.update_idletasks()
         self.focus_force()
+        self.after(100, self.focus_force)
+        self.after(200, self.focus_force)
 
     def salvar_grid(self):
         try:
