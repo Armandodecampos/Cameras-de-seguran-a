@@ -89,6 +89,7 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_grid = os.path.join(os.path.expanduser("~"), "grid_config_abi.json")
         self.grid_cameras = self.carregar_grid()
         self.slot_selecionado = 0
+        self.press_data = None
 
         # --- LAYOUT ---
         self.grid_columnconfigure(1, weight=1)
@@ -166,9 +167,11 @@ class CentralMonitoramento(ctk.CTk):
             lbl = ctk.CTkLabel(frm, text=f"ESPAÇO {i+1}", corner_radius=0)
             lbl.pack(expand=True, fill="both")
 
-            # Click binding on both frame and label
-            frm.bind("<Button-1>", lambda e, idx=i: self.selecionar_slot(idx))
-            lbl.bind("<Button-1>", lambda e, idx=i: self.selecionar_slot(idx))
+            # Click and Drag bindings
+            frm.bind("<Button-1>", lambda e, idx=i: self.ao_pressionar_slot(e, idx))
+            lbl.bind("<Button-1>", lambda e, idx=i: self.ao_pressionar_slot(e, idx))
+            frm.bind("<ButtonRelease-1>", lambda e, idx=i: self.ao_soltar_slot(e, idx))
+            lbl.bind("<ButtonRelease-1>", lambda e, idx=i: self.ao_soltar_slot(e, idx))
 
             self.slot_frames.append(frm)
             self.slot_labels.append(lbl)
@@ -198,6 +201,44 @@ class CentralMonitoramento(ctk.CTk):
         ip = self.grid_cameras[index]
         if ip:
             self.trocar_qualidade(ip, 101)
+
+    def ao_pressionar_slot(self, event, index):
+        self.press_data = {"index": index, "x": event.x_root, "y": event.y_root}
+
+    def ao_soltar_slot(self, event, index):
+        if not self.press_data: return
+
+        dist = ((event.x_root - self.press_data["x"])**2 + (event.y_root - self.press_data["y"])**2)**0.5
+
+        if dist < 15: # Threshold para considerar como clique
+            self.selecionar_slot(index)
+        else:
+            target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
+            if target_idx is not None and target_idx != index:
+                # Troca as câmeras no grid
+                self.grid_cameras[index], self.grid_cameras[target_idx] = \
+                    self.grid_cameras[target_idx], self.grid_cameras[index]
+
+                # Atualiza labels caso não tenha vídeo rodando
+                for idx in [index, target_idx]:
+                    ip = self.grid_cameras[idx]
+                    if not ip:
+                        self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+                    elif ip not in self.camera_handlers:
+                        self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
+
+                self.salvar_grid()
+                self.selecionar_slot(target_idx)
+
+        self.press_data = None
+
+    def encontrar_slot_por_coords(self, x_root, y_root):
+        for i, frm in enumerate(self.slot_frames):
+            fx, fy = frm.winfo_rootx(), frm.winfo_rooty()
+            fw, fh = frm.winfo_width(), frm.winfo_height()
+            if fx <= x_root <= fx + fw and fy <= y_root <= fy + fh:
+                return i
+        return None
 
     def restaurar_grid(self):
         # Identifica câmera que estava em foco para reduzir qualidade
@@ -476,6 +517,14 @@ class CentralMonitoramento(ctk.CTk):
 
                     # OTIMIZAÇÃO: Redimensiona antes de converter cores (mais rápido)
                     frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
+
+                    # Overlay do IP na imagem (Sombra + Texto para melhor legibilidade)
+                    pos = (10, h - 10)
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    scale = 0.5
+                    cv2.putText(frame_resized, ip, pos, font, scale, (0, 0, 0), 2, cv2.LINE_AA)
+                    cv2.putText(frame_resized, ip, pos, font, scale, (255, 255, 255), 1, cv2.LINE_AA)
+
                     img_tk = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)))
                     self.slot_labels[i].configure(image=img_tk, text="")
                     self.slot_labels[i].image = img_tk
