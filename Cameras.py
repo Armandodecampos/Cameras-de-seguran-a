@@ -1,4 +1,3 @@
-
 import cv2
 import customtkinter as ctk
 from PIL import Image, ImageTk
@@ -137,15 +136,13 @@ class CentralMonitoramento(ctk.CTk):
         self.painel_base = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
 
-        self.btn_toggle_cam = ctk.CTkButton(self.painel_base, text="LIGAR", fg_color="#2E7D32", hover_color="#1B5E20",
-                                           height=40, command=self.toggle_camera_selecionada)
-        self.btn_toggle_cam.pack(side="left", expand=True, fill="x", padx=5)
+        # REMOVIDO: Botão Toggle Camera (Ligar/Desligar) a pedido do usuário
 
         self.btn_toggle_grid = ctk.CTkButton(self.painel_base, text="1 camera", fg_color="#1F6AA5",
                                             height=40, command=self.toggle_grid_layout)
         self.btn_toggle_grid.pack(side="left", expand=True, fill="x", padx=5)
 
-        self.btn_limpar_slot = ctk.CTkButton(self.painel_base, text="LIMPAR", fg_color="#666",
+        self.btn_limpar_slot = ctk.CTkButton(self.painel_base, text="LIMPAR SLOT", fg_color="#666",
                                             height=40, command=self.limpar_slot_atual)
         self.btn_limpar_slot.pack(side="left", padx=5)
 
@@ -186,6 +183,10 @@ class CentralMonitoramento(ctk.CTk):
         self.selecionar_slot(0)
         self.restaurar_grid() # Garante que inicia no modo 20 câmeras
         self.alternar_todos_streams()
+        
+        # REMOVIDO: Inicialização automática em tela cheia
+        # self.entrar_tela_cheia()
+        
         self.loop_exibicao()
 
     # --- LÓGICA DO GRID ---
@@ -209,32 +210,33 @@ class CentralMonitoramento(ctk.CTk):
 
     def ao_soltar_slot(self, event, index):
         if not self.press_data: return
-        try:
-            dist = ((event.x_root - self.press_data["x"])**2 + (event.y_root - self.press_data["y"])**2)**0.5
 
-            if dist < 15: # Threshold para considerar como clique
-                self.selecionar_slot(index)
-            else:
-                target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
-                if target_idx is not None and target_idx != index:
-                    # Troca as câmeras no grid
-                    self.grid_cameras[index], self.grid_cameras[target_idx] = \
-                        self.grid_cameras[target_idx], self.grid_cameras[index]
+        dist = ((event.x_root - self.press_data["x"])**2 + (event.y_root - self.press_data["y"])**2)**0.5
 
-                    # Atualiza labels caso não tenha vídeo rodando
-                    for idx in [index, target_idx]:
-                        ip = self.grid_cameras[idx]
-                        if not ip:
-                            self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
-                            self.slot_labels[idx].image = None
-                        elif ip not in self.camera_handlers:
-                            self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
-                            self.slot_labels[idx].image = None
+        if dist < 15: # Threshold para considerar como clique
+            self.selecionar_slot(index)
+            # NOVO: Se tiver câmera, maximiza ao clicar
+            if self.grid_cameras[index]:
+                self.maximizar_slot(index)
+        else:
+            target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
+            if target_idx is not None and target_idx != index:
+                # Troca as câmeras no grid
+                self.grid_cameras[index], self.grid_cameras[target_idx] = \
+                    self.grid_cameras[target_idx], self.grid_cameras[index]
 
-                    self.salvar_grid()
-                    self.selecionar_slot(target_idx)
-        finally:
-            self.press_data = None
+                # Atualiza labels caso não tenha vídeo rodando
+                for idx in [index, target_idx]:
+                    ip = self.grid_cameras[idx]
+                    if not ip:
+                        self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+                    elif ip not in self.camera_handlers:
+                        self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
+
+                self.salvar_grid()
+                self.selecionar_slot(target_idx)
+
+        self.press_data = None
 
     def encontrar_slot_por_coords(self, x_root, y_root):
         for i, frm in enumerate(self.slot_frames):
@@ -277,6 +279,13 @@ class CentralMonitoramento(ctk.CTk):
             # Pinta o botão na lateral
             if ip in self.botoes_referencia:
                 self.pintar_botao(ip, "#1F6AA5")
+        else:
+            # CORREÇÃO: Se selecionar slot vazio, limpa dados da seleção
+            self.ip_selecionado = None
+            self.entry_nome.delete(0, "end")
+            # Remove seleção visual da lista lateral
+            for btn in self.botoes_referencia.values():
+                btn.configure(fg_color="transparent")
 
         self.atualizar_botoes_controle()
 
@@ -284,7 +293,9 @@ class CentralMonitoramento(ctk.CTk):
         idx = self.slot_selecionado
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = None
-        self.slot_labels[idx].configure(image=None, text="")
+        
+        # CORREÇÃO: Resetar texto para "ESPAÇO X" e limpar imagem
+        self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
         self.slot_labels[idx].image = None
         self.salvar_grid()
 
@@ -295,7 +306,20 @@ class CentralMonitoramento(ctk.CTk):
                     self.camera_handlers[ip_antigo].parar()
                 del self.camera_handlers[ip_antigo]
 
+        # CORREÇÃO: Limpa seleção explicitamente para evitar bugs
+        self.ip_selecionado = None
+        self.entry_nome.delete(0, "end")
+        
+        # Remove seleção visual da lista lateral
+        for btn in self.botoes_referencia.values():
+            btn.configure(fg_color="transparent")
+
+        # Se estava maximizado neste slot, restaura o grid para ver o espaço vazio
+        if self.slot_maximized == idx:
+            self.restaurar_grid()
+
         self.atualizar_botoes_controle()
+        self.focus_set() # Garante que o foco saia do botão
 
     def salvar_grid(self):
         try:
@@ -318,47 +342,12 @@ class CentralMonitoramento(ctk.CTk):
             if ip and ip not in self.camera_handlers:
                 self.iniciar_conexao_assincrona(ip, 102)
 
-    def ligar_camera_selecionada(self):
-        ip = self.grid_cameras[self.slot_selecionado]
-        if ip:
-            self.iniciar_conexao_assincrona(ip)
-
-    def desligar_camera_selecionada(self):
-        ip = self.grid_cameras[self.slot_selecionado]
-        self.slot_labels[self.slot_selecionado].configure(image=None, text="")
-        self.slot_labels[self.slot_selecionado].image = None
-        if ip and ip in self.camera_handlers:
-            handler = self.camera_handlers[ip]
-            if hasattr(handler, 'parar'):
-                handler.parar()
-            del self.camera_handlers[ip]
-
     def atualizar_botoes_controle(self):
-        # Atualiza botão de Câmera (Ligar/Desligar)
-        ip = self.grid_cameras[self.slot_selecionado]
-        if not ip:
-            self.btn_toggle_cam.configure(text="LIGAR", fg_color="#2E7D32", state="disabled")
-        else:
-            self.btn_toggle_cam.configure(state="normal")
-            if ip in self.camera_handlers:
-                self.btn_toggle_cam.configure(text="DESLIGAR", fg_color="#B71C1C", hover_color="#880E4F")
-            else:
-                self.btn_toggle_cam.configure(text="LIGAR", fg_color="#2E7D32", hover_color="#1B5E20")
-
         # Atualiza botão de Grid (Expandir/Minimizar)
         if self.slot_maximized is not None:
             self.btn_toggle_grid.configure(text="20 cameras", fg_color="#444", hover_color="#333")
         else:
             self.btn_toggle_grid.configure(text="1 camera", fg_color="#1F6AA5", hover_color="#154a73")
-
-    def toggle_camera_selecionada(self):
-        ip = self.grid_cameras[self.slot_selecionado]
-        if not ip: return
-        if ip in self.camera_handlers:
-            self.desligar_camera_selecionada()
-        else:
-            self.ligar_camera_selecionada()
-        self.atualizar_botoes_controle()
 
     def toggle_grid_layout(self):
         if self.slot_maximized is not None:
@@ -384,7 +373,6 @@ class CentralMonitoramento(ctk.CTk):
         ip_antigo_slot = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
         self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
-        self.slot_labels[idx].image = None
         self.salvar_grid()
 
         # Se o IP antigo não estiver mais em nenhum slot, encerra o handler
@@ -473,10 +461,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.iniciar_conexao_assincrona(ip, novo_canal)
 
     def iniciar_conexao_assincrona(self, ip, canal=102):
-        if not ip: return
-        # Se já estiver conectando, permite tentar novamente se for manual (pode ajudar a destravar)
-        if ip in self.camera_handlers and self.camera_handlers[ip] != "CONECTANDO": return
-
+        if not ip or ip in self.camera_handlers: return
         self.camera_handlers[ip] = "CONECTANDO"
         threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
@@ -497,22 +482,14 @@ class CentralMonitoramento(ctk.CTk):
         # OTIMIZAÇÃO: Processa apenas os slots visíveis
         indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
 
-        # Cache de frames por IP para evitar múltiplas chamadas a pegar_frame()
-        frames_por_ip = {}
-
         for i in indices:
             ip = self.grid_cameras[i]
             if not ip: continue
             handler = self.camera_handlers.get(ip)
             if not handler or handler == "CONECTANDO": continue
 
-            # Tenta pegar do cache, senão tenta do handler
-            if ip in frames_por_ip:
-                frame = frames_por_ip[ip]
-            else:
-                frame = handler.pegar_frame()
-                frames_por_ip[ip] = frame
-
+            # Só processa se houver um frame novo (otimiza CPU da thread principal)
+            frame = handler.pegar_frame()
             if frame is not None:
                 try:
                     # Usa o tamanho do Frame (fixo pelo grid) em vez do Label
