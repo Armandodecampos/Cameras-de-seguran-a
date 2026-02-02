@@ -299,7 +299,9 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_botoes_controle()
 
     def limpar_slot_atual(self):
-        if not messagebox.askyesno("Confirmar", "Você realmente deseja deletar?"):
+        self.press_data = None
+        if not messagebox.askyesno("Confirmar", "Você realmente deseja deletar?", parent=self):
+            self.focus_force()
             return
 
         idx = self.slot_selecionado
@@ -330,7 +332,8 @@ class CentralMonitoramento(ctk.CTk):
             self.restaurar_grid()
 
         self.atualizar_botoes_controle()
-        self.focus_set() # Garante que o foco saia do botão
+        self.update()
+        self.focus_force()
 
     def salvar_grid(self):
         try:
