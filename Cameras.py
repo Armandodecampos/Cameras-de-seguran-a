@@ -381,6 +381,11 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_frame.pack_forget()
         self.grid_frame.pack(expand=True, fill="both", padx=0, pady=0)
 
+        # Remove espaços entre câmeras
+        for frm in self.slot_frames:
+            frm.grid_configure(padx=0, pady=0)
+            frm.configure(corner_radius=0)
+
         # Botão flutuante para sair
         self.btn_sair_fs = ctk.CTkButton(self.main_frame, text="✖ SAIR TELA CHEIA",
                                          width=150, height=40, fg_color="#c62828",
@@ -398,6 +403,11 @@ class CentralMonitoramento(ctk.CTk):
 
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         self.main_frame.grid_configure(column=1, columnspan=1)
+
+        # Restaura espaços entre câmeras
+        for frm in self.slot_frames:
+            frm.grid_configure(padx=1, pady=1)
+            frm.configure(corner_radius=2)
 
         # Limpa e restaura ordem do pack
         self.painel_topo.pack_forget()
