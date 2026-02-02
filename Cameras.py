@@ -215,9 +215,9 @@ class CentralMonitoramento(ctk.CTk):
 
         if dist < 15: # Threshold para considerar como clique
             self.selecionar_slot(index)
-            # NOVO: Se tiver câmera, maximiza ao clicar
+            # NOVO: Se tiver câmera, alterna (maximiza/restaura) ao clicar
             if self.grid_cameras[index]:
-                self.maximizar_slot(index)
+                self.toggle_grid_layout()
         else:
             target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
             if target_idx is not None and target_idx != index:
