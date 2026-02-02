@@ -6,6 +6,7 @@ import os
 import threading
 import time
 import socket
+from tkinter import messagebox
 
 # Configuração de baixa latência para OpenCV/FFMPEG
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
@@ -211,29 +212,30 @@ class CentralMonitoramento(ctk.CTk):
     def ao_soltar_slot(self, event, index):
         if not self.press_data: return
 
-        dist = ((event.x_root - self.press_data["x"])**2 + (event.y_root - self.press_data["y"])**2)**0.5
+        try:
+            dist = ((event.x_root - self.press_data["x"])**2 + (event.y_root - self.press_data["y"])**2)**0.5
 
-        if dist < 15: # Threshold para considerar como clique
-            self.selecionar_slot(index)
-        else:
-            target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
-            if target_idx is not None and target_idx != index:
-                # Troca as câmeras no grid
-                self.grid_cameras[index], self.grid_cameras[target_idx] = \
-                    self.grid_cameras[target_idx], self.grid_cameras[index]
+            if dist < 15: # Threshold para considerar como clique
+                self.selecionar_slot(index)
+            else:
+                target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
+                if target_idx is not None and target_idx != index:
+                    # Troca as câmeras no grid
+                    self.grid_cameras[index], self.grid_cameras[target_idx] = \
+                        self.grid_cameras[target_idx], self.grid_cameras[index]
 
-                # Atualiza labels caso não tenha vídeo rodando
-                for idx in [index, target_idx]:
-                    ip = self.grid_cameras[idx]
-                    if not ip:
-                        self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
-                    elif ip not in self.camera_handlers:
-                        self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
+                    # Atualiza labels caso não tenha vídeo rodando
+                    for idx in [index, target_idx]:
+                        ip = self.grid_cameras[idx]
+                        if not ip:
+                            self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+                        elif ip not in self.camera_handlers:
+                            self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
 
-                self.salvar_grid()
-                self.selecionar_slot(target_idx)
-
-        self.press_data = None
+                    self.salvar_grid()
+                    self.selecionar_slot(target_idx)
+        finally:
+            self.press_data = None
 
     def encontrar_slot_por_coords(self, x_root, y_root):
         for i, frm in enumerate(self.slot_frames):
@@ -263,30 +265,43 @@ class CentralMonitoramento(ctk.CTk):
         # Remove destaque do anterior
         self.slot_frames[self.slot_selecionado].configure(fg_color="#111", border_width=0)
 
+        # Guarda IP anterior para limpar destaque lateral
+        ip_anterior = self.ip_selecionado
+
         # Define novo slot
         self.slot_selecionado = index
         self.slot_frames[index].configure(fg_color="#1f538d", border_width=2, border_color="#FFF")
 
         # Se houver uma câmera no slot, seleciona ela na lista lateral para exibir o nome
-        ip = self.grid_cameras[index]
-        if ip:
-            self.ip_selecionado = ip
+        ip_novo = self.grid_cameras[index]
+        if ip_novo:
+            # Limpa destaque do IP anterior se for diferente
+            if ip_anterior and ip_anterior != ip_novo:
+                self.pintar_botao(ip_anterior, "transparent")
+
+            self.ip_selecionado = ip_novo
             self.entry_nome.delete(0, "end")
-            self.entry_nome.insert(0, self.dados_cameras.get(ip, ""))
+            self.entry_nome.insert(0, self.dados_cameras.get(ip_novo, ""))
             # Pinta o botão na lateral
-            if ip in self.botoes_referencia:
-                self.pintar_botao(ip, "#1F6AA5")
+            self.pintar_botao(ip_novo, "#1F6AA5")
         else:
-            # CORREÇÃO: Se selecionar slot vazio, limpa dados da seleção
+            # Se selecionar slot vazio, limpa dados da seleção
+            if ip_anterior:
+                self.pintar_botao(ip_anterior, "transparent")
+
             self.ip_selecionado = None
             self.entry_nome.delete(0, "end")
-            # Remove seleção visual da lista lateral
-            for btn in self.botoes_referencia.values():
-                btn.configure(fg_color="transparent")
+
+            # Garante que nada na lateral está selecionado (limpeza redundante para segurança)
+            # Remove seleção visual da lista lateral se necessário, mas o pintar_botao acima já deve cuidar
+            # do principal. Mantendo loop apenas se ip_anterior falhar ou se houver resíduos.
 
         self.atualizar_botoes_controle()
 
     def limpar_slot_atual(self):
+        if not messagebox.askyesno("Confirmar", "Você realmente deseja deletar?"):
+            return
+
         idx = self.slot_selecionado
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = None
@@ -303,14 +318,13 @@ class CentralMonitoramento(ctk.CTk):
                     self.camera_handlers[ip_antigo].parar()
                 del self.camera_handlers[ip_antigo]
 
-        # CORREÇÃO: Limpa seleção explicitamente para evitar bugs
+        # CORREÇÃO: Limpa seleção lateral antes de invalidar o IP
+        if self.ip_selecionado:
+            self.pintar_botao(self.ip_selecionado, "transparent")
+
         self.ip_selecionado = None
         self.entry_nome.delete(0, "end")
         
-        # Remove seleção visual da lista lateral
-        for btn in self.botoes_referencia.values():
-            btn.configure(fg_color="transparent")
-
         # Se estava maximizado neste slot, restaura o grid para ver o espaço vazio
         if self.slot_maximized == idx:
             self.restaurar_grid()
@@ -384,15 +398,9 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_botoes_controle()
 
     def pintar_botao(self, ip, cor):
-        """Aplica a cor, mas respeita a seleção azul."""
-        if ip not in self.botoes_referencia: return
-
-        # Se este IP for o selecionado, FORÇA AZUL
-        if ip == self.ip_selecionado:
-            self.botoes_referencia[ip].configure(fg_color="#1F6AA5")
-        else:
-            # Se não for o selecionado, usa cor transparente (padrão)
-            self.botoes_referencia[ip].configure(fg_color="transparent")
+        """Aplica a cor ao botão lateral correspondente ao IP."""
+        if ip and ip in self.botoes_referencia:
+            self.botoes_referencia[ip].configure(fg_color=cor)
 
     # --- TELA CHEIA (MAXIMIZAÇÃO TOTAL) ---
     def entrar_tela_cheia(self):
