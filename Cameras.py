@@ -137,15 +137,15 @@ class CentralMonitoramento(ctk.CTk):
         self.painel_base = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
 
-        self.btn_toggle_cam = ctk.CTkButton(self.painel_base, text="LIGAR CAM", fg_color="#2E7D32", hover_color="#1B5E20",
+        self.btn_toggle_cam = ctk.CTkButton(self.painel_base, text="LIGAR", fg_color="#2E7D32", hover_color="#1B5E20",
                                            height=40, command=self.toggle_camera_selecionada)
         self.btn_toggle_cam.pack(side="left", expand=True, fill="x", padx=5)
 
-        self.btn_toggle_grid = ctk.CTkButton(self.painel_base, text="EXPANDIR", fg_color="#1F6AA5",
+        self.btn_toggle_grid = ctk.CTkButton(self.painel_base, text="1 camera", fg_color="#1F6AA5",
                                             height=40, command=self.toggle_grid_layout)
         self.btn_toggle_grid.pack(side="left", expand=True, fill="x", padx=5)
 
-        self.btn_limpar_slot = ctk.CTkButton(self.painel_base, text="LIMPAR SLOT", fg_color="#666",
+        self.btn_limpar_slot = ctk.CTkButton(self.painel_base, text="LIMPAR", fg_color="#666",
                                             height=40, command=self.limpar_slot_atual)
         self.btn_limpar_slot.pack(side="left", padx=5)
 
@@ -278,7 +278,7 @@ class CentralMonitoramento(ctk.CTk):
         idx = self.slot_selecionado
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = None
-        self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+        self.slot_labels[idx].configure(image=None, text="")
         self.salvar_grid()
 
         # Se o IP antigo não estiver mais em nenhum slot, encerra o handler
@@ -323,25 +323,25 @@ class CentralMonitoramento(ctk.CTk):
             if hasattr(handler, 'parar'):
                 handler.parar()
             del self.camera_handlers[ip]
-            self.slot_labels[self.slot_selecionado].configure(image=None, text=f"DESLIGADO\n{ip}")
+            self.slot_labels[self.slot_selecionado].configure(image=None, text="")
 
     def atualizar_botoes_controle(self):
         # Atualiza botão de Câmera (Ligar/Desligar)
         ip = self.grid_cameras[self.slot_selecionado]
         if not ip:
-            self.btn_toggle_cam.configure(text="LIGAR CAM", fg_color="#2E7D32", state="disabled")
+            self.btn_toggle_cam.configure(text="LIGAR", fg_color="#2E7D32", state="disabled")
         else:
             self.btn_toggle_cam.configure(state="normal")
             if ip in self.camera_handlers:
-                self.btn_toggle_cam.configure(text="DESLIGAR CAM", fg_color="#B71C1C", hover_color="#880E4F")
+                self.btn_toggle_cam.configure(text="DESLIGAR", fg_color="#B71C1C", hover_color="#880E4F")
             else:
-                self.btn_toggle_cam.configure(text="LIGAR CAM", fg_color="#2E7D32", hover_color="#1B5E20")
+                self.btn_toggle_cam.configure(text="LIGAR", fg_color="#2E7D32", hover_color="#1B5E20")
 
         # Atualiza botão de Grid (Expandir/Minimizar)
         if self.slot_maximized is not None:
-            self.btn_toggle_grid.configure(text="MINIMIZAR (GRID 20)", fg_color="#444", hover_color="#333")
+            self.btn_toggle_grid.configure(text="20 cameras", fg_color="#444", hover_color="#333")
         else:
-            self.btn_toggle_grid.configure(text="EXPANDIR (FOCAR)", fg_color="#1F6AA5", hover_color="#154a73")
+            self.btn_toggle_grid.configure(text="1 camera", fg_color="#1F6AA5", hover_color="#154a73")
 
     def toggle_camera_selecionada(self):
         ip = self.grid_cameras[self.slot_selecionado]
