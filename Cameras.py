@@ -255,14 +255,6 @@ class CentralMonitoramento(ctk.CTk):
             self.trocar_qualidade(ip_foco, 102)
 
     def selecionar_slot(self, index):
-        # Lógica de Maximizar/Restaurar
-        if self.slot_maximized == index:
-            self.restaurar_grid()
-        else:
-            if self.slot_maximized is not None:
-                self.restaurar_grid()
-            self.maximizar_slot(index)
-
         # Remove destaque do anterior
         self.slot_frames[self.slot_selecionado].configure(fg_color="#111", border_width=0)
 
