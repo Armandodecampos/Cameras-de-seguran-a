@@ -8,13 +8,18 @@ import threading
 import time
 import socket
 
+# Configuração de baixa latência para OpenCV/FFMPEG
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
+
 # --- CLASSE DE VÍDEO OTIMIZADA (SEM TRAVAMENTOS) ---
 class CameraHandler:
-    def __init__(self, url):
+    def __init__(self, url, canal=101):
         self.url = url
+        self.canal = canal
         self.cap = None
         self.rodando = False
         self.frame_atual = None
+        self.frame_novo = False
         self.lock = threading.Lock()
         self.conectado = False
 
@@ -41,6 +46,7 @@ class CameraHandler:
             if ret:
                 with self.lock:
                     self.frame_atual = frame
+                    self.frame_novo = True
             else:
                 time.sleep(0.05) # Pequena pausa se perder sinal para não fritar CPU
 
@@ -49,7 +55,10 @@ class CameraHandler:
 
     def pegar_frame(self):
         with self.lock:
-            return self.frame_atual
+            if self.frame_novo:
+                self.frame_novo = False
+                return self.frame_atual
+            return None
 
     def parar(self):
         self.rodando = False
@@ -185,12 +194,24 @@ class CentralMonitoramento(ctk.CTk):
                 frm.grid_forget()
         self.slot_maximized = index
 
+        # Sobe qualidade da câmera focada
+        ip = self.grid_cameras[index]
+        if ip:
+            self.trocar_qualidade(ip, 101)
+
     def restaurar_grid(self):
+        # Identifica câmera que estava em foco para reduzir qualidade
+        ip_foco = self.grid_cameras[self.slot_maximized] if self.slot_maximized is not None else None
+
         for i, frm in enumerate(self.slot_frames):
             row, col = i // 5, i % 5
             frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1)
             frm.grid()
         self.slot_maximized = None
+
+        # Reduz qualidade da que estava focada
+        if ip_foco:
+            self.trocar_qualidade(ip_foco, 102)
 
     def selecionar_slot(self, index):
         # Lógica de Maximizar/Restaurar
@@ -252,10 +273,10 @@ class CentralMonitoramento(ctk.CTk):
         return [None] * 20
 
     def alternar_todos_streams(self):
-        # Liga todas as câmeras que estão no grid mas não estão rodando
+        # Liga todas as câmeras que estão no grid mas não estão rodando (em baixa qualidade)
         for ip in set(self.grid_cameras):
             if ip and ip not in self.camera_handlers:
-                self.iniciar_conexao_assincrona(ip)
+                self.iniciar_conexao_assincrona(ip, 102)
 
     def ligar_camera_selecionada(self):
         ip = self.grid_cameras[self.slot_selecionado]
@@ -331,8 +352,8 @@ class CentralMonitoramento(ctk.CTk):
                     self.camera_handlers[ip_antigo_slot].parar()
                 del self.camera_handlers[ip_antigo_slot]
 
-        # Inicia conexão se necessário
-        self.iniciar_conexao_assincrona(ip)
+        # Inicia conexão se necessário (sempre 102 ao selecionar via grid)
+        self.iniciar_conexao_assincrona(ip, 102)
         self.atualizar_botoes_controle()
 
     def pintar_botao(self, ip, cor):
@@ -388,14 +409,25 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10))
 
     # --- STREAMING ---
-    def iniciar_conexao_assincrona(self, ip):
+    def trocar_qualidade(self, ip, novo_canal):
+        """Reinicia o stream de uma câmera para trocar resolução (101 vs 102)."""
+        if not ip: return
+        handler = self.camera_handlers.get(ip)
+
+        if handler and handler != "CONECTANDO":
+            if getattr(handler, 'canal', 101) != novo_canal:
+                handler.parar()
+                del self.camera_handlers[ip]
+                self.iniciar_conexao_assincrona(ip, novo_canal)
+
+    def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip or ip in self.camera_handlers: return
         self.camera_handlers[ip] = "CONECTANDO"
-        threading.Thread(target=self._thread_conectar, args=(ip,), daemon=True).start()
+        threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
-    def _thread_conectar(self, ip):
-        url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/101"
-        nova_cam = CameraHandler(url)
+    def _thread_conectar(self, ip, canal):
+        url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
+        nova_cam = CameraHandler(url, canal)
         sucesso = nova_cam.iniciar()
         self.after(0, lambda: self._pos_conexao(sucesso, nova_cam, ip))
 
@@ -416,6 +448,7 @@ class CentralMonitoramento(ctk.CTk):
             handler = self.camera_handlers.get(ip)
             if not handler or handler == "CONECTANDO": continue
 
+            # Só processa se houver um frame novo (otimiza CPU da thread principal)
             frame = handler.pegar_frame()
             if frame is not None:
                 try:
