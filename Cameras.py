@@ -1,6 +1,6 @@
 import os
-# Otimização FFMPEG para baixo delay
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp"
+# Otimização FFMPEG para baixo delay e conexão rápida
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;analyzeduration;100000;probesize;100000;stimeout;3000000;fflags;nobuffer"
 
 import cv2
 import customtkinter as ctk
@@ -19,6 +19,7 @@ class CameraHandler:
         self.cap = None
         self.rodando = False
         self.frame_atual = None
+        self.frame_novo = False
         self.lock = threading.Lock()
         self.conectado = False
 
@@ -45,6 +46,7 @@ class CameraHandler:
             if ret:
                 with self.lock:
                     self.frame_atual = frame
+                    self.frame_novo = True
             else:
                 time.sleep(0.05) # Pequena pausa se perder sinal para não fritar CPU
 
@@ -456,11 +458,15 @@ class CentralMonitoramento(ctk.CTk):
             ip = self.grid_cameras[i]
             if not ip: continue
             handler = self.camera_handlers.get(ip)
-            if not handler or handler == "CONECTANDO": continue
+            if not handler or handler == "CONECTANDO" or not handler.frame_novo:
+                continue
 
             frame = handler.pegar_frame()
             if frame is not None:
                 try:
+                    # Reset do flag ANTES de processar para evitar perda de frames se o processamento for lento
+                    handler.frame_novo = False
+
                     # Usa o tamanho do Frame (fixo pelo grid) em vez do Label
                     w = self.slot_frames[i].winfo_width()
                     h = self.slot_frames[i].winfo_height()
