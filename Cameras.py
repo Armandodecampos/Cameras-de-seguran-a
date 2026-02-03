@@ -91,6 +91,7 @@ class CentralMonitoramento(ctk.CTk):
         self.press_data = None
         self.fila_conexoes = queue.Queue()
         self.cooldown_conexoes = {}
+        self.ip_pendente = None
 
         # --- LAYOUT ---
         self.grid_columnconfigure(1, weight=1)
@@ -129,6 +130,10 @@ class CentralMonitoramento(ctk.CTk):
         self.btn_salvar = ctk.CTkButton(self.painel_topo, text="Salvar", command=self.salvar_nome,
                                         fg_color="#F57C00", hover_color="#E65100", width=80)
         self.btn_salvar.pack(side="left", padx=5)
+
+        self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar Slot", command=self.limpar_slot_atual,
+                                             fg_color="#c62828", hover_color="#b71c1c", width=100)
+        self.btn_limpar_slot.pack(side="left", padx=5)
 
         self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="TELA CHEIA [ESC]", command=self.entrar_tela_cheia,
                                             fg_color="#444", width=120)
@@ -201,6 +206,14 @@ class CentralMonitoramento(ctk.CTk):
         if ip: self.trocar_qualidade(ip, 101)
 
     def ao_pressionar_slot(self, event, index):
+        if self.ip_pendente:
+            self.atribuir_ip_ao_slot(index, self.ip_pendente)
+            # Limpa destaque no sidebar
+            self.pintar_botao(self.ip_pendente, "transparent")
+            self.ip_pendente = None
+            return
+
+        self.selecionar_slot(index)
         self.press_data = {"index": index, "x": event.x_root, "y": event.y_root}
 
     def ao_soltar_slot(self, event, index):
@@ -235,28 +248,17 @@ class CentralMonitoramento(ctk.CTk):
                     self.selecionar_slot(target_idx)
                     return
 
-                # Realiza a troca lógica
+                # Realiza a troca lógica apenas na lista de IPs
                 self.grid_cameras[source_idx], self.grid_cameras[target_idx] = \
                     self.grid_cameras[target_idx], self.grid_cameras[source_idx]
 
-                # Atualiza visualmente os dois slots envolvidos
+                # Limpa visualmente o slot de origem se ele ficou vazio para evitar "fantasma"
                 for idx in [source_idx, target_idx]:
-                    ip = self.grid_cameras[idx]
+                    if self.grid_cameras[idx] == "0.0.0.0":
+                        try: self.slot_labels[idx].configure(image="", text=f"ESPAÇO {idx+1}")
+                        except: pass
+                        self.slot_labels[idx].image = None
 
-                    # Reset visual robusto: separa imagem de texto
-                    try: self.slot_labels[idx].configure(image=None)
-                    except: pass
-
-                    try:
-                        if not ip or ip == "0.0.0.0":
-                            self.slot_labels[idx].configure(text=f"ESPAÇO {idx+1}")
-                        else:
-                            self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}")
-                    except: pass
-
-                    self.slot_labels[idx].image = None
-
-                self.update_idletasks()
                 self.salvar_grid()
                 self.selecionar_slot(target_idx)
         finally:
@@ -316,45 +318,14 @@ class CentralMonitoramento(ctk.CTk):
     def limpar_slot_atual(self):
         self.press_data = None
         idx = self.slot_selecionado
-        ip_antigo = self.grid_cameras[idx]
+        self.atribuir_ip_ao_slot(idx, "0.0.0.0")
         
-        # 1. Limpa o registro lógico do Grid
-        self.grid_cameras[idx] = "0.0.0.0"
-        
-        # 2. Reseta visualmente o label e apaga a referência da imagem
-        try: self.slot_labels[idx].configure(image=None)
-        except: pass
-
-        try: self.slot_labels[idx].configure(text=f"ESPAÇO {idx+1}")
-        except: pass
-
-        self.slot_labels[idx].image = None 
-
-        # 3. Para a câmera se ela não estiver em nenhum outro slot
-        if ip_antigo and ip_antigo not in self.grid_cameras:
-            if ip_antigo in self.camera_handlers:
-                try:
-                    if hasattr(self.camera_handlers[ip_antigo], 'parar'):
-                        self.camera_handlers[ip_antigo].parar()
-                except: pass
-                
-                # Remove do dicionário
-                if ip_antigo in self.camera_handlers:
-                    del self.camera_handlers[ip_antigo]
-
-        # 4. Atualiza estado da barra lateral
         if self.ip_selecionado:
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
             self.entry_nome.delete(0, "end")
 
         if self.slot_maximized == idx: self.restaurar_grid()
-
-        self.salvar_grid()
-        
-        # 5. FORÇA A ATUALIZAÇÃO VISUAL IMEDIATA E SINCRONIZA SELEÇÃO
-        self.update_idletasks()
-        self.focus_force()
         self.selecionar_slot(idx)
 
     def salvar_grid(self):
@@ -393,59 +364,59 @@ class CentralMonitoramento(ctk.CTk):
             self.maximizar_slot(self.slot_selecionado)
         self.atualizar_botoes_controle()
 
-    def selecionar_camera(self, ip):
-        # Validação robusta do slot selecionado
-        try:
-            self.slot_selecionado = int(self.slot_selecionado)
-        except (TypeError, ValueError):
-            self.slot_selecionado = 0
-
-        if not (0 <= self.slot_selecionado < 20):
-            print(f"Erro: Slot selecionado inválido ({self.slot_selecionado})")
-            return
-
-        # Gerencia seleção anterior
-        ip_anterior = self.ip_selecionado
-        self.ip_selecionado = ip
-        if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
-        self.pintar_botao(ip, "#1F6AA5")
+    def atribuir_ip_ao_slot(self, idx, ip):
+        if not (0 <= idx < 20): return
         
-        # Atualiza input de nome
-        self.entry_nome.delete(0, "end")
-        self.entry_nome.insert(0, self.dados_cameras.get(ip, ""))
-
-        # Pega o slot atual
-        idx = self.slot_selecionado
         ip_antigo = self.grid_cameras[idx]
-        
-        # --- ATUALIZAÇÃO CRÍTICA ---
-        # 1. Limpa o slot completamente antes de atribuir novo
         self.grid_cameras[idx] = ip
 
-        # Reset visual imediato - separando configure para evitar que erro em um bloqueie o outro
-        try: self.slot_labels[idx].configure(image=None)
+        # Reset visual robusto
+        try: self.slot_labels[idx].configure(image="")
         except: pass
 
-        try: self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}")
+        try:
+            if ip == "0.0.0.0":
+                self.slot_labels[idx].configure(text=f"ESPAÇO {idx+1}")
+            else:
+                self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}")
         except: pass
-
-        self.slot_labels[idx].image = None
-        self.update_idletasks() # Força a interface a mostrar "Conectando"
-        # ---------------------------
         
+        self.slot_labels[idx].image = None
+        self.update_idletasks()
         self.salvar_grid()
 
-        # Se havia uma câmera diferente antes, remove o handler antigo
+        # Limpeza de handler antigo se não for mais usado no grid
         if ip_antigo and ip_antigo != "0.0.0.0" and ip_antigo != ip and ip_antigo not in self.grid_cameras:
             if ip_antigo in self.camera_handlers:
                 try: self.camera_handlers[ip_antigo].parar()
                 except: pass
                 del self.camera_handlers[ip_antigo]
 
-        # Inicia nova conexão - limpa cooldown para permitir tentativa manual
-        if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-        self.iniciar_conexao_assincrona(ip, 102)
-        self.atualizar_botoes_controle()
+        # Inicia nova conexão
+        if ip != "0.0.0.0":
+            if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+            self.iniciar_conexao_assincrona(ip, 102)
+
+    def selecionar_camera(self, ip):
+        # Se clicar na mesma que já está pendente, cancela a seleção
+        if self.ip_pendente == ip:
+            self.ip_pendente = None
+            self.pintar_botao(ip, "transparent")
+            return
+
+        # Limpa destaque da anterior
+        if self.ip_pendente:
+            self.pintar_botao(self.ip_pendente, "transparent")
+
+        # Nova seleção pendente
+        self.ip_pendente = ip
+        self.pintar_botao(ip, "#F57C00") # Laranja para indicar "Pendente"
+
+        # Atualiza input de nome para referência
+        self.entry_nome.delete(0, "end")
+        self.entry_nome.insert(0, self.dados_cameras.get(ip, ""))
+
+        self.title(f"Monitoramento ABI - Camera {ip} selecionada. Clique em um slot para posicionar.")
 
     def pintar_botao(self, ip, cor):
         if ip and ip in self.botoes_referencia:
@@ -550,53 +521,66 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_botoes_controle()
 
     def loop_exibicao(self):
-        # Processar resultados de conexões em background
-        while not self.fila_conexoes.empty():
-            try:
-                sucesso, camera_obj, ip = self.fila_conexoes.get_nowait()
-                self._pos_conexao(sucesso, camera_obj, ip)
-            except: pass
-
-        indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
-        frames_cache = {}
-
-        for i in indices:
-            ip = self.grid_cameras[i]
-            if not ip or ip == "0.0.0.0": continue
-            
-            if ip not in frames_cache:
-                handler = self.camera_handlers.get(ip)
-                if handler is None:
-                    self.iniciar_conexao_assincrona(ip, 102)
-                    frames_cache[ip] = None
-                    continue
-                if handler == "CONECTANDO":
-                    frames_cache[ip] = None
-                    continue
-                frames_cache[ip] = handler.pegar_frame()
-
-            frame = frames_cache[ip]
-            if frame is not None:
+        try:
+            # Processar resultados de conexões em background
+            while not self.fila_conexoes.empty():
                 try:
-                    w = self.slot_frames[i].winfo_width()
-                    h = self.slot_frames[i].winfo_height()
-                    w = max(10, w - 6)
-                    h = max(10, h - 6)
-
-                    frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
-                    
-                    pos = (10, h - 10)
-                    cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                    cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-
-                    pil_img = Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB))
-                    ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
-                    
-                    self.slot_labels[i].configure(image=ctk_img, text="")
-                    self.slot_labels[i].image = ctk_img # Segura referência
+                    sucesso, camera_obj, ip = self.fila_conexoes.get_nowait()
+                    self._pos_conexao(sucesso, camera_obj, ip)
                 except: pass
 
-        self.after(40, self.loop_exibicao)
+            agora = time.time()
+            indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
+            frames_cache = {}
+
+            for i in indices:
+                ip = self.grid_cameras[i]
+                if not ip or ip == "0.0.0.0": continue
+
+                # Feedback visual de cooldown
+                if ip in self.cooldown_conexoes:
+                    if agora - self.cooldown_conexoes[ip] < 10:
+                        try: self.slot_labels[i].configure(text=f"COOLDOWN\n{ip}")
+                        except: pass
+                        continue
+
+                if ip not in frames_cache:
+                    handler = self.camera_handlers.get(ip)
+                    if handler is None:
+                        self.iniciar_conexao_assincrona(ip, 102)
+                        frames_cache[ip] = None
+                        continue
+                    if handler == "CONECTANDO":
+                        frames_cache[ip] = None
+                        continue
+                    frames_cache[ip] = handler.pegar_frame()
+
+                frame = frames_cache[ip]
+                if frame is not None:
+                    try:
+                        w = self.slot_frames[i].winfo_width()
+                        h = self.slot_frames[i].winfo_height()
+                        w = max(10, w - 6)
+                        h = max(10, h - 6)
+
+                        frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
+
+                        pos = (10, h - 10)
+                        cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                        cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
+                        pil_img = Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB))
+                        ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
+
+                        # Atualização final do label
+                        try: self.slot_labels[i].configure(image=ctk_img, text="")
+                        except: pass
+                        self.slot_labels[i].image = ctk_img # Segura referência
+                    except: pass
+        except Exception as e:
+            print(f"Erro no loop de exibição: {e}")
+        finally:
+            self.after(40, self.loop_exibicao)
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
