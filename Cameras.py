@@ -314,8 +314,9 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_botoes_controle()
         
         # 5. FORÇA A ATUALIZAÇÃO VISUAL IMEDIATA
-        self.update_idletasks()
+        self.update()
         self.focus_force()
+        self.selecionar_slot(idx)
 
     def salvar_grid(self):
         try:
