@@ -220,17 +220,15 @@ class CentralMonitoramento(ctk.CTk):
 
                     for idx in [index, target_idx]:
                         ip = self.grid_cameras[idx]
-                        if not ip or ip == "0.0.0.0":
-                            try:
+                        try:
+                            if not ip or ip == "0.0.0.0":
                                 self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
-                            except: pass
+                            else:
+                                self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
                             self.slot_labels[idx].image = None
-                        elif ip not in self.camera_handlers:
-                            try:
-                                self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
-                            except: pass
-                            self.slot_labels[idx].image = None
+                        except: pass
 
+                    self.update_idletasks()
                     self.salvar_grid()
                     self.selecionar_slot(target_idx)
         finally:
