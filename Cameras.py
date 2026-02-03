@@ -123,12 +123,7 @@ class CentralMonitoramento(ctk.CTk):
         self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color="#2b2b2b", height=50)
         self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
 
-        self.lbl_info_topo = ctk.CTkLabel(self.painel_topo, text="Nenhuma câmera selecionada", font=("Roboto", 15, "bold"))
-        self.lbl_info_topo.pack(side="left", padx=10, pady=5)
-
-        self.entry_nome = ctk.CTkEntry(self.painel_topo, width=300, placeholder_text="Nome da câmera...")
-        # Pack gerenciado pelo botão renomear
-
+        # Botões do topo (alinhados à esquerda)
         self.btn_renomear = ctk.CTkButton(self.painel_topo, text="Renomear", command=self.alternar_edicao_nome,
                                         fg_color="#F57C00", hover_color="#E65100", width=100, state="disabled")
         self.btn_renomear.pack(side="left", padx=5)
@@ -137,9 +132,24 @@ class CentralMonitoramento(ctk.CTk):
                                              fg_color="#c62828", hover_color="#b71c1c", width=120)
         self.btn_limpar_slot.pack(side="left", padx=5)
 
-        self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="TELA CHEIA [ESC]", command=self.entrar_tela_cheia,
-                                            fg_color="#444", width=120)
-        self.btn_fullscreen.pack(side="right", padx=10)
+        self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="Tela Cheia [ESC]", command=self.entrar_tela_cheia,
+                                            fg_color="#1F6AA5", hover_color="#154a73", width=120)
+        self.btn_fullscreen.pack(side="left", padx=5)
+
+        # Info da câmera (alinhada após os botões)
+        self.container_info_topo = ctk.CTkFrame(self.painel_topo, fg_color="transparent")
+        self.container_info_topo.pack(side="left", padx=10, pady=5)
+
+        self.lbl_nome_topo = ctk.CTkLabel(self.container_info_topo, text="Nenhuma câmera selecionada",
+                                          font=("Roboto", 15, "bold"), text_color="white")
+        self.lbl_nome_topo.pack(side="left")
+
+        self.lbl_ip_topo = ctk.CTkLabel(self.container_info_topo, text="",
+                                        font=("Roboto", 13), text_color="#AAAAAA")
+        self.lbl_ip_topo.pack(side="left", padx=(5, 0))
+
+        self.entry_nome = ctk.CTkEntry(self.painel_topo, width=300, placeholder_text="Nome da câmera...")
+        # Pack gerenciado pelo botão renomear
 
         # Rodapé
         self.painel_base = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -297,7 +307,7 @@ class CentralMonitoramento(ctk.CTk):
 
         # Reset modo edição se estiver ativo
         self.entry_nome.pack_forget()
-        self.lbl_info_topo.pack(side="left", padx=10, pady=5, before=self.btn_renomear)
+        self.container_info_topo.pack(side="left", padx=10, pady=5)
         self.btn_renomear.configure(text="Renomear")
 
         ip_novo = self.grid_cameras[index]
@@ -310,14 +320,16 @@ class CentralMonitoramento(ctk.CTk):
             self.entry_nome.insert(0, nome)
             self.pintar_botao(ip_novo, "#1F6AA5")
 
-            self.lbl_info_topo.configure(text=f"{nome if nome else 'Câmera'} - {ip_novo}")
+            self.lbl_nome_topo.configure(text=self.formatar_nome(nome if nome else 'Câmera'))
+            self.lbl_ip_topo.configure(text=f"({ip_novo})")
             self.btn_renomear.configure(state="normal")
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
             self.entry_nome.delete(0, "end")
 
-            self.lbl_info_topo.configure(text="Nenhuma câmera selecionada")
+            self.lbl_nome_topo.configure(text="Nenhuma câmera selecionada")
+            self.lbl_ip_topo.configure(text="")
             self.btn_renomear.configure(state="disabled")
 
         self.atualizar_botoes_controle()
@@ -465,6 +477,12 @@ class CentralMonitoramento(ctk.CTk):
                 del self.camera_handlers[ip]
                 self.iniciar_conexao_assincrona(ip, novo_canal)
 
+    def formatar_nome(self, nome, max_chars=25):
+        if not nome: return ""
+        if len(nome) > max_chars:
+            return nome[:max_chars-3] + "..."
+        return nome
+
     def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip or ip == "0.0.0.0": return
         
@@ -584,7 +602,7 @@ class CentralMonitoramento(ctk.CTk):
         if not self.ip_selecionado: return
 
         if self.btn_renomear.cget("text") == "Renomear":
-            self.lbl_info_topo.pack_forget()
+            self.container_info_topo.pack_forget()
             self.entry_nome.pack(side="left", padx=10, pady=5, before=self.btn_renomear)
             self.entry_nome.delete(0, "end")
             self.entry_nome.insert(0, self.dados_cameras.get(self.ip_selecionado, ""))
@@ -592,7 +610,7 @@ class CentralMonitoramento(ctk.CTk):
         else:
             self.salvar_nome()
             self.entry_nome.pack_forget()
-            self.lbl_info_topo.pack(side="left", padx=10, pady=5, before=self.btn_renomear)
+            self.container_info_topo.pack(side="left", padx=10, pady=5)
             self.btn_renomear.configure(text="Renomear")
 
     def salvar_nome(self):
@@ -604,7 +622,8 @@ class CentralMonitoramento(ctk.CTk):
 
             # Atualiza labels
             self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
-            self.lbl_info_topo.configure(text=f"{novo_nome} - {self.ip_selecionado}")
+            self.lbl_nome_topo.configure(text=self.formatar_nome(novo_nome))
+            self.lbl_ip_topo.configure(text=f"({self.ip_selecionado})")
 
     def gerar_lista_ips(self):
         base = ["192.168.7.2", "192.168.7.3", "192.168.7.4", "192.168.7.20", "192.168.7.21",
