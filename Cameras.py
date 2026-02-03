@@ -178,7 +178,7 @@ class CentralMonitoramento(ctk.CTk):
         self.criar_botoes_iniciais()
 
         for i, ip in enumerate(self.grid_cameras):
-            if ip: self.slot_labels[i].configure(text=f"CARREGANDO\n{ip}")
+            if ip and ip != "0.0.0.0": self.slot_labels[i].configure(text=f"CARREGANDO\n{ip}")
 
         self.selecionar_slot(0)
         self.restaurar_grid()
@@ -264,7 +264,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_frames[index].configure(border_color="red", border_width=2)
 
         ip_novo = self.grid_cameras[index]
-        if ip_novo:
+        if ip_novo and ip_novo != "0.0.0.0":
             if ip_anterior and ip_anterior != ip_novo:
                 self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = ip_novo
@@ -284,7 +284,7 @@ class CentralMonitoramento(ctk.CTk):
         ip_antigo = self.grid_cameras[idx]
         
         # 1. Limpa o registro lógico do Grid
-        self.grid_cameras[idx] = None
+        self.grid_cameras[idx] = "0.0.0.0"
         
         # 2. Reseta visualmente o label e apaga a referência da imagem
         self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
@@ -324,20 +324,20 @@ class CentralMonitoramento(ctk.CTk):
         except: pass
 
     def carregar_grid(self):
-        grid = [None] * 20
+        grid = ["0.0.0.0"] * 20
         if os.path.exists(self.arquivo_grid):
             try:
                 with open(self.arquivo_grid, "r", encoding='utf-8') as f:
                     dados = json.load(f)
                     if isinstance(dados, list):
                         for i in range(min(len(dados), 20)):
-                            grid[i] = dados[i]
+                            if dados[i]: grid[i] = dados[i]
             except: pass
         return grid
 
     def alternar_todos_streams(self):
         for ip in set(self.grid_cameras):
-            if ip and ip not in self.camera_handlers:
+            if ip and ip != "0.0.0.0" and ip not in self.camera_handlers:
                 self.iniciar_conexao_assincrona(ip, 102)
 
     def atualizar_botoes_controle(self):
@@ -383,7 +383,7 @@ class CentralMonitoramento(ctk.CTk):
         self.salvar_grid()
 
         # Se havia uma câmera diferente antes, remove o handler antigo
-        if ip_antigo and ip_antigo != ip and ip_antigo not in self.grid_cameras:
+        if ip_antigo and ip_antigo != "0.0.0.0" and ip_antigo != ip and ip_antigo not in self.grid_cameras:
             if ip_antigo in self.camera_handlers:
                 try: self.camera_handlers[ip_antigo].parar()
                 except: pass
@@ -450,7 +450,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.iniciar_conexao_assincrona(ip, novo_canal)
 
     def iniciar_conexao_assincrona(self, ip, canal=102):
-        if not ip: return
+        if not ip or ip == "0.0.0.0": return
         
         # Proteção: Se já existe handler, evita múltiplas tentativas simultâneas
         if ip in self.camera_handlers:
@@ -482,7 +482,7 @@ class CentralMonitoramento(ctk.CTk):
 
         for i in indices:
             ip = self.grid_cameras[i]
-            if not ip: continue
+            if not ip or ip == "0.0.0.0": continue
             handler = self.camera_handlers.get(ip)
             
             # --- CORREÇÃO DE FALHA SILENCIOSA ---
