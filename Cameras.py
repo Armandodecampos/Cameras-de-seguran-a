@@ -141,10 +141,6 @@ class CentralMonitoramento(ctk.CTk):
                                              height=40, command=self.toggle_grid_layout)
         self.btn_toggle_grid.pack(side="left", expand=True, fill="x", padx=5)
 
-        self.btn_limpar_slot = ctk.CTkButton(self.painel_base, text="Remover Camera", fg_color="#666",
-                                             height=40, command=self.limpar_slot_atual)
-        self.btn_limpar_slot.pack(side="left", padx=5)
-
         # Grid de Câmeras
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="black")
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10))
