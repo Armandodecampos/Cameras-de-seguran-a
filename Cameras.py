@@ -314,9 +314,8 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_botoes_controle()
         
         # 5. FORÇA A ATUALIZAÇÃO VISUAL IMEDIATA
-        self.update()
+        self.update_idletasks()
         self.focus_force()
-        self.selecionar_slot(idx)
 
     def salvar_grid(self):
         try:
@@ -325,11 +324,16 @@ class CentralMonitoramento(ctk.CTk):
         except: pass
 
     def carregar_grid(self):
+        grid = [None] * 20
         if os.path.exists(self.arquivo_grid):
             try:
-                with open(self.arquivo_grid, "r", encoding='utf-8') as f: return json.load(f)
+                with open(self.arquivo_grid, "r", encoding='utf-8') as f:
+                    dados = json.load(f)
+                    if isinstance(dados, list):
+                        for i in range(min(len(dados), 20)):
+                            grid[i] = dados[i]
             except: pass
-        return [None] * 20
+        return grid
 
     def alternar_todos_streams(self):
         for ip in set(self.grid_cameras):
@@ -350,6 +354,10 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_botoes_controle()
 
     def selecionar_camera(self, ip):
+        if self.slot_selecionado is None or not (0 <= self.slot_selecionado < 20):
+            print(f"Erro: Slot selecionado inválido ({self.slot_selecionado})")
+            return
+
         # Gerencia seleção anterior
         ip_anterior = self.ip_selecionado
         self.ip_selecionado = ip
@@ -444,14 +452,15 @@ class CentralMonitoramento(ctk.CTk):
     def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip: return
         
-        # Proteção: Se já existe handler, verifica se está vivo
+        # Proteção: Se já existe handler, evita múltiplas tentativas simultâneas
         if ip in self.camera_handlers:
             handler = self.camera_handlers[ip]
-            if handler != "CONECTANDO" and hasattr(handler, 'rodando') and handler.rodando:
+            if handler == "CONECTANDO": return
+            if hasattr(handler, 'rodando') and handler.rodando:
                 return # Já está rodando OK
-            else:
-                # Se está "morto" ou travado, remove para reconectar
-                if ip in self.camera_handlers: del self.camera_handlers[ip]
+
+            # Se está "morto" ou travado, remove para reconectar
+            del self.camera_handlers[ip]
 
         self.camera_handlers[ip] = "CONECTANDO"
         threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
