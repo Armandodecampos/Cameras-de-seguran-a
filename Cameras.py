@@ -90,6 +90,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_selecionado = 0
         self.press_data = None
         self.fila_conexoes = queue.Queue()
+        self.cooldown_conexoes = {}
 
         # --- LAYOUT ---
         self.grid_columnconfigure(1, weight=1)
@@ -241,15 +242,19 @@ class CentralMonitoramento(ctk.CTk):
                 # Atualiza visualmente os dois slots envolvidos
                 for idx in [source_idx, target_idx]:
                     ip = self.grid_cameras[idx]
+
+                    # Reset visual robusto: separa imagem de texto
+                    try: self.slot_labels[idx].configure(image=None)
+                    except: pass
+
                     try:
                         if not ip or ip == "0.0.0.0":
-                            self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+                            self.slot_labels[idx].configure(text=f"ESPAÇO {idx+1}")
                         else:
-                            # Força reset visual para garantir que o loop de exibição assuma o novo local
-                            self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
-                        self.slot_labels[idx].image = None
-                    except Exception as e:
-                        print(f"Erro ao atualizar slot {idx} no swap: {e}")
+                            self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}")
+                    except: pass
+
+                    self.slot_labels[idx].image = None
 
                 self.update_idletasks()
                 self.salvar_grid()
@@ -317,10 +322,12 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_cameras[idx] = "0.0.0.0"
         
         # 2. Reseta visualmente o label e apaga a referência da imagem
-        try:
-            self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
-        except Exception as e:
-            print(f"Aviso: Erro ao limpar visual do slot {idx}: {e}")
+        try: self.slot_labels[idx].configure(image=None)
+        except: pass
+
+        try: self.slot_labels[idx].configure(text=f"ESPAÇO {idx+1}")
+        except: pass
+
         self.slot_labels[idx].image = None 
 
         # 3. Para a câmera se ela não estiver em nenhum outro slot
@@ -415,14 +422,14 @@ class CentralMonitoramento(ctk.CTk):
         # 1. Limpa o slot completamente antes de atribuir novo
         self.grid_cameras[idx] = ip
 
-        # Reset visual imediato
-        try:
-            self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
-        except Exception as e:
-            print(f"Aviso: Erro ao resetar visual do slot {idx}: {e}")
+        # Reset visual imediato - separando configure para evitar que erro em um bloqueie o outro
+        try: self.slot_labels[idx].configure(image=None)
+        except: pass
 
-        if hasattr(self.slot_labels[idx], 'image'):
-            self.slot_labels[idx].image = None
+        try: self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}")
+        except: pass
+
+        self.slot_labels[idx].image = None
         self.update_idletasks() # Força a interface a mostrar "Conectando"
         # ---------------------------
         
@@ -435,7 +442,8 @@ class CentralMonitoramento(ctk.CTk):
                 except: pass
                 del self.camera_handlers[ip_antigo]
 
-        # Inicia nova conexão
+        # Inicia nova conexão - limpa cooldown para permitir tentativa manual
+        if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
         self.iniciar_conexao_assincrona(ip, 102)
         self.atualizar_botoes_controle()
 
@@ -498,6 +506,12 @@ class CentralMonitoramento(ctk.CTk):
     def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip or ip == "0.0.0.0": return
         
+        # Cooldown para evitar spam em caso de falha (10 segundos)
+        agora = time.time()
+        if ip in self.cooldown_conexoes:
+            if agora - self.cooldown_conexoes[ip] < 10:
+                return
+
         # Proteção: Se já existe handler, evita múltiplas tentativas simultâneas
         if ip in self.camera_handlers:
             handler = self.camera_handlers[ip]
@@ -522,9 +536,17 @@ class CentralMonitoramento(ctk.CTk):
             self.fila_conexoes.put((False, None, ip))
 
     def _pos_conexao(self, sucesso, camera_obj, ip):
-        if sucesso: self.camera_handlers[ip] = camera_obj
+        if sucesso:
+            self.camera_handlers[ip] = camera_obj
+            if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
         else:
             if ip in self.camera_handlers: del self.camera_handlers[ip]
+            self.cooldown_conexoes[ip] = time.time()
+            # Informa o erro visualmente em todos os slots que usam este IP
+            for i, grid_ip in enumerate(self.grid_cameras):
+                if grid_ip == ip:
+                    try: self.slot_labels[i].configure(text=f"FALHA CONEXÃO\n{ip}")
+                    except: pass
         self.atualizar_botoes_controle()
 
     def loop_exibicao(self):
