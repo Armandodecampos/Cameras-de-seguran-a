@@ -123,12 +123,15 @@ class CentralMonitoramento(ctk.CTk):
         self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color="#2b2b2b", height=50)
         self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
 
-        self.entry_nome = ctk.CTkEntry(self.painel_topo, width=300, placeholder_text="Nome da câmera...")
-        self.entry_nome.pack(side="left", padx=10, pady=5)
+        self.lbl_info_topo = ctk.CTkLabel(self.painel_topo, text="Nenhuma câmera selecionada", font=("Roboto", 15, "bold"))
+        self.lbl_info_topo.pack(side="left", padx=10, pady=5)
 
-        self.btn_salvar = ctk.CTkButton(self.painel_topo, text="Salvar", command=self.salvar_nome,
-                                        fg_color="#F57C00", hover_color="#E65100", width=80)
-        self.btn_salvar.pack(side="left", padx=5)
+        self.entry_nome = ctk.CTkEntry(self.painel_topo, width=300, placeholder_text="Nome da câmera...")
+        # Pack gerenciado pelo botão renomear
+
+        self.btn_renomear = ctk.CTkButton(self.painel_topo, text="Renomear", command=self.alternar_edicao_nome,
+                                        fg_color="#F57C00", hover_color="#E65100", width=100, state="disabled")
+        self.btn_renomear.pack(side="left", padx=5)
 
         self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar Usuário", command=self.limpar_slot_atual,
                                              fg_color="#c62828", hover_color="#b71c1c", width=120)
@@ -292,18 +295,30 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_frames[index].configure(border_color="red", border_width=2)
         self.title(f"Monitoramento ABI - Usuário {index + 1} selecionado")
 
+        # Reset modo edição se estiver ativo
+        self.entry_nome.pack_forget()
+        self.lbl_info_topo.pack(side="left", padx=10, pady=5, before=self.btn_renomear)
+        self.btn_renomear.configure(text="Renomear")
+
         ip_novo = self.grid_cameras[index]
         if ip_novo and ip_novo != "0.0.0.0":
             if ip_anterior and ip_anterior != ip_novo:
                 self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = ip_novo
+            nome = self.dados_cameras.get(ip_novo, "")
             self.entry_nome.delete(0, "end")
-            self.entry_nome.insert(0, self.dados_cameras.get(ip_novo, ""))
+            self.entry_nome.insert(0, nome)
             self.pintar_botao(ip_novo, "#1F6AA5")
+
+            self.lbl_info_topo.configure(text=f"{nome if nome else 'Câmera'} - {ip_novo}")
+            self.btn_renomear.configure(state="normal")
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
             self.entry_nome.delete(0, "end")
+
+            self.lbl_info_topo.configure(text="Nenhuma câmera selecionada")
+            self.btn_renomear.configure(state="disabled")
 
         self.atualizar_botoes_controle()
 
@@ -565,13 +580,31 @@ class CentralMonitoramento(ctk.CTk):
             if termo in ip or termo in nome: item['frame'].pack(fill="x", pady=2)
             else: item['frame'].pack_forget()
 
+    def alternar_edicao_nome(self):
+        if not self.ip_selecionado: return
+
+        if self.btn_renomear.cget("text") == "Renomear":
+            self.lbl_info_topo.pack_forget()
+            self.entry_nome.pack(side="left", padx=10, pady=5, before=self.btn_renomear)
+            self.entry_nome.delete(0, "end")
+            self.entry_nome.insert(0, self.dados_cameras.get(self.ip_selecionado, ""))
+            self.btn_renomear.configure(text="Salvar")
+        else:
+            self.salvar_nome()
+            self.entry_nome.pack_forget()
+            self.lbl_info_topo.pack(side="left", padx=10, pady=5, before=self.btn_renomear)
+            self.btn_renomear.configure(text="Renomear")
+
     def salvar_nome(self):
         if self.ip_selecionado:
             novo_nome = self.entry_nome.get()
             self.dados_cameras[self.ip_selecionado] = novo_nome
             with open(self.arquivo_config, "w", encoding='utf-8') as f:
                 json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
+
+            # Atualiza labels
             self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
+            self.lbl_info_topo.configure(text=f"{novo_nome} - {self.ip_selecionado}")
 
     def gerar_lista_ips(self):
         base = ["192.168.7.2", "192.168.7.3", "192.168.7.4", "192.168.7.20", "192.168.7.21",
