@@ -91,7 +91,6 @@ class CentralMonitoramento(ctk.CTk):
         self.press_data = None
         self.fila_conexoes = queue.Queue()
         self.cooldown_conexoes = {}
-        self.ip_pendente = None
 
         # --- LAYOUT ---
         self.grid_columnconfigure(1, weight=1)
@@ -131,8 +130,8 @@ class CentralMonitoramento(ctk.CTk):
                                         fg_color="#F57C00", hover_color="#E65100", width=80)
         self.btn_salvar.pack(side="left", padx=5)
 
-        self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar Slot", command=self.limpar_slot_atual,
-                                             fg_color="#c62828", hover_color="#b71c1c", width=100)
+        self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar Usuário", command=self.limpar_slot_atual,
+                                             fg_color="#c62828", hover_color="#b71c1c", width=120)
         self.btn_limpar_slot.pack(side="left", padx=5)
 
         self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="TELA CHEIA [ESC]", command=self.entrar_tela_cheia,
@@ -165,7 +164,7 @@ class CentralMonitoramento(ctk.CTk):
             frm.grid(row=row, column=col, padx=1, pady=1, sticky="nsew")
             frm.pack_propagate(False)
 
-            lbl = ctk.CTkLabel(frm, text=f"ESPAÇO {i+1}", corner_radius=0)
+            lbl = ctk.CTkLabel(frm, text=f"USUÁRIO {i+1}", corner_radius=0)
             
             # Label com padding para não cobrir a borda
             lbl.pack(expand=True, fill="both", padx=2, pady=2)
@@ -206,13 +205,6 @@ class CentralMonitoramento(ctk.CTk):
         if ip: self.trocar_qualidade(ip, 101)
 
     def ao_pressionar_slot(self, event, index):
-        if self.ip_pendente:
-            self.atribuir_ip_ao_slot(index, self.ip_pendente)
-            # Limpa destaque no sidebar
-            self.pintar_botao(self.ip_pendente, "transparent")
-            self.ip_pendente = None
-            return
-
         self.selecionar_slot(index)
         self.press_data = {"index": index, "x": event.x_root, "y": event.y_root}
 
@@ -255,7 +247,7 @@ class CentralMonitoramento(ctk.CTk):
                 # Limpa visualmente o slot de origem se ele ficou vazio para evitar "fantasma"
                 for idx in [source_idx, target_idx]:
                     if self.grid_cameras[idx] == "0.0.0.0":
-                        try: self.slot_labels[idx].configure(image="", text=f"ESPAÇO {idx+1}")
+                        try: self.slot_labels[idx].configure(image="", text=f"USUÁRIO {idx+1}")
                         except: pass
                         self.slot_labels[idx].image = None
 
@@ -298,7 +290,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_selecionado = index
         
         self.slot_frames[index].configure(border_color="red", border_width=2)
-        self.title(f"Monitoramento ABI - Slot {index + 1} selecionado")
+        self.title(f"Monitoramento ABI - Usuário {index + 1} selecionado")
 
         ip_novo = self.grid_cameras[index]
         if ip_novo and ip_novo != "0.0.0.0":
@@ -376,7 +368,7 @@ class CentralMonitoramento(ctk.CTk):
 
         try:
             if ip == "0.0.0.0":
-                self.slot_labels[idx].configure(text=f"ESPAÇO {idx+1}")
+                self.slot_labels[idx].configure(text=f"USUÁRIO {idx+1}")
             else:
                 self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}")
         except: pass
@@ -398,25 +390,9 @@ class CentralMonitoramento(ctk.CTk):
             self.iniciar_conexao_assincrona(ip, 102)
 
     def selecionar_camera(self, ip):
-        # Se clicar na mesma que já está pendente, cancela a seleção
-        if self.ip_pendente == ip:
-            self.ip_pendente = None
-            self.pintar_botao(ip, "transparent")
-            return
-
-        # Limpa destaque da anterior
-        if self.ip_pendente:
-            self.pintar_botao(self.ip_pendente, "transparent")
-
-        # Nova seleção pendente
-        self.ip_pendente = ip
-        self.pintar_botao(ip, "#F57C00") # Laranja para indicar "Pendente"
-
-        # Atualiza input de nome para referência
-        self.entry_nome.delete(0, "end")
-        self.entry_nome.insert(0, self.dados_cameras.get(ip, ""))
-
-        self.title(f"Monitoramento ABI - Camera {ip} selecionada. Clique em um slot para posicionar.")
+        if self.slot_selecionado is not None:
+            self.atribuir_ip_ao_slot(self.slot_selecionado, ip)
+            self.selecionar_slot(self.slot_selecionado)
 
     def pintar_botao(self, ip, cor):
         if ip and ip in self.botoes_referencia:
