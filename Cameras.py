@@ -396,7 +396,7 @@ class CentralMonitoramento(ctk.CTk):
 
     def pintar_botao(self, ip, cor):
         if ip and ip in self.botoes_referencia:
-            self.botoes_referencia[ip].configure(fg_color=cor)
+            self.botoes_referencia[ip]['frame'].configure(fg_color=cor)
 
     def entrar_tela_cheia(self):
         if self.em_tela_cheia: return
@@ -492,7 +492,7 @@ class CentralMonitoramento(ctk.CTk):
             # Informa o erro visualmente em todos os slots que usam este IP
             for i, grid_ip in enumerate(self.grid_cameras):
                 if grid_ip == ip:
-                    try: self.slot_labels[i].configure(text=f"FALHA CONEXÃO\n{ip}")
+                    try: self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
                     except: pass
         self.atualizar_botoes_controle()
 
@@ -516,7 +516,7 @@ class CentralMonitoramento(ctk.CTk):
                 # Feedback visual de cooldown
                 if ip in self.cooldown_conexoes:
                     if agora - self.cooldown_conexoes[ip] < 10:
-                        try: self.slot_labels[i].configure(text=f"COOLDOWN\n{ip}")
+                        try: self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
                         except: pass
                         continue
 
@@ -560,10 +560,10 @@ class CentralMonitoramento(ctk.CTk):
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
-        for ip, btn in self.botoes_referencia.items():
+        for ip, item in self.botoes_referencia.items():
             nome = self.dados_cameras.get(ip, "").lower()
-            if termo in ip or termo in nome: btn.pack(fill="x", pady=2)
-            else: btn.pack_forget()
+            if termo in ip or termo in nome: item['frame'].pack(fill="x", pady=2)
+            else: item['frame'].pack_forget()
 
     def salvar_nome(self):
         if self.ip_selecionado:
@@ -571,7 +571,7 @@ class CentralMonitoramento(ctk.CTk):
             self.dados_cameras[self.ip_selecionado] = novo_nome
             with open(self.arquivo_config, "w", encoding='utf-8') as f:
                 json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
-            self.botoes_referencia[self.ip_selecionado].configure(text=f"{novo_nome}\n{self.ip_selecionado}")
+            self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
 
     def gerar_lista_ips(self):
         base = ["192.168.7.2", "192.168.7.3", "192.168.7.4", "192.168.7.20", "192.168.7.21",
@@ -592,11 +592,29 @@ class CentralMonitoramento(ctk.CTk):
     def criar_botoes_iniciais(self):
         for ip in self.ips_unicos:
             nome = self.dados_cameras.get(ip, f"IP {ip}")
-            btn = ctk.CTkButton(self.scroll_frame, text=f"{nome}\n{ip}", anchor="w", height=45,
-                                fg_color="transparent", border_width=1, border_color="#333",
-                                command=lambda x=ip: self.selecionar_camera(x))
-            btn.pack(fill="x", pady=2)
-            self.botoes_referencia[ip] = btn
+
+            # Frame container para simular o botão
+            frm = ctk.CTkFrame(self.scroll_frame, height=50, fg_color="transparent", border_width=1, border_color="#333")
+            frm.pack(fill="x", pady=2)
+            frm.pack_propagate(False)
+
+            # Labels internos com cores diferentes
+            lbl_nome = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color="white", anchor="w")
+            lbl_nome.pack(fill="x", padx=10, pady=(4, 0))
+
+            lbl_ip = ctk.CTkLabel(frm, text=ip, font=("Roboto", 11), text_color="#AAAAAA", anchor="w")
+            lbl_ip.pack(fill="x", padx=10, pady=(0, 4))
+
+            # Bindings de clique para o frame e para as labels
+            for widget in [frm, lbl_nome, lbl_ip]:
+                widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
+                widget.configure(cursor="hand2")
+
+            self.botoes_referencia[ip] = {
+                'frame': frm,
+                'lbl_nome': lbl_nome,
+                'lbl_ip': lbl_ip
+            }
 
 if __name__ == "__main__":
     app = CentralMonitoramento()
