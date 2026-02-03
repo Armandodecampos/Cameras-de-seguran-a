@@ -211,6 +211,10 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
                 if target_idx is not None and target_idx != index:
+                    # Se o de origem for vazio, não permite arrastar para retirar câmera
+                    if self.grid_cameras[index] == "0.0.0.0":
+                        return
+
                     self.grid_cameras[index], self.grid_cameras[target_idx] = \
                         self.grid_cameras[target_idx], self.grid_cameras[index]
 
