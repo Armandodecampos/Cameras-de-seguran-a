@@ -204,38 +204,62 @@ class CentralMonitoramento(ctk.CTk):
 
     def ao_soltar_slot(self, event, index):
         if not self.press_data: return
+        source_idx = self.press_data.get("index")
+
+        # Se estiver em tela cheia ou slot maximizado, desativa drag-and-drop
+        if self.slot_maximized is not None or self.em_tela_cheia:
+            self.press_data = None
+            return
+
         try:
             dist = ((event.x_root - self.press_data["x"])**2 + (event.y_root - self.press_data["y"])**2)**0.5
-            if dist < 15:
-                self.selecionar_slot(index)
-            else:
-                target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
-                if target_idx is not None and target_idx != index:
-                    # Se o de origem for vazio, não permite arrastar para retirar câmera
-                    if self.grid_cameras[index] == "0.0.0.0":
-                        return
+            target_idx = self.encontrar_slot_por_coords(event.x_root, event.y_root)
 
-                    self.grid_cameras[index], self.grid_cameras[target_idx] = \
-                        self.grid_cameras[target_idx], self.grid_cameras[index]
+            # Se for apenas um clique ou soltou fora de qualquer slot
+            if dist < 15 or target_idx is None:
+                final_idx = target_idx if target_idx is not None else source_idx
+                if 0 <= final_idx < 20:
+                    self.selecionar_slot(final_idx)
+                return
 
-                    for idx in [index, target_idx]:
-                        ip = self.grid_cameras[idx]
-                        try:
-                            if not ip or ip == "0.0.0.0":
-                                self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
-                            else:
-                                self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
-                            self.slot_labels[idx].image = None
-                        except: pass
+            # Se soltou no mesmo slot de origem, apenas seleciona
+            if target_idx == source_idx:
+                self.selecionar_slot(source_idx)
+                return
 
-                    self.update_idletasks()
-                    self.salvar_grid()
+            # Validação de troca entre slots
+            if 0 <= source_idx < 20 and 0 <= target_idx < 20:
+                # Se o de origem for vazio, não permite arrastar
+                if self.grid_cameras[source_idx] == "0.0.0.0":
                     self.selecionar_slot(target_idx)
+                    return
+
+                # Realiza a troca lógica
+                self.grid_cameras[source_idx], self.grid_cameras[target_idx] = \
+                    self.grid_cameras[target_idx], self.grid_cameras[source_idx]
+
+                # Atualiza visualmente os dois slots envolvidos
+                for idx in [source_idx, target_idx]:
+                    ip = self.grid_cameras[idx]
+                    try:
+                        if not ip or ip == "0.0.0.0":
+                            self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+                        else:
+                            # Força reset visual para garantir que o loop de exibição assuma o novo local
+                            self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
+                        self.slot_labels[idx].image = None
+                    except Exception as e:
+                        print(f"Erro ao atualizar slot {idx} no swap: {e}")
+
+                self.update_idletasks()
+                self.salvar_grid()
+                self.selecionar_slot(target_idx)
         finally:
             self.press_data = None
 
     def encontrar_slot_por_coords(self, x_root, y_root):
         for i, frm in enumerate(self.slot_frames):
+            if not frm.winfo_viewable(): continue
             fx, fy = frm.winfo_rootx(), frm.winfo_rooty()
             fw, fh = frm.winfo_width(), frm.winfo_height()
             if fx <= x_root <= fx + fw and fy <= y_root <= fy + fh:
@@ -258,6 +282,7 @@ class CentralMonitoramento(ctk.CTk):
         if ip_foco: self.trocar_qualidade(ip_foco, 102)
 
     def selecionar_slot(self, index):
+        if not (0 <= index < 20): return
         # Desmarca todos para garantir que não haja fantasmas de seleção
         for frm in self.slot_frames:
             frm.configure(border_color="black", border_width=2)
@@ -362,7 +387,13 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_botoes_controle()
 
     def selecionar_camera(self, ip):
-        if self.slot_selecionado is None or not (0 <= self.slot_selecionado < 20):
+        # Validação robusta do slot selecionado
+        try:
+            self.slot_selecionado = int(self.slot_selecionado)
+        except (TypeError, ValueError):
+            self.slot_selecionado = 0
+
+        if not (0 <= self.slot_selecionado < 20):
             print(f"Erro: Slot selecionado inválido ({self.slot_selecionado})")
             return
 
@@ -481,10 +512,14 @@ class CentralMonitoramento(ctk.CTk):
         threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
     def _thread_conectar(self, ip, canal):
-        url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
-        nova_cam = CameraHandler(url, canal)
-        sucesso = nova_cam.iniciar()
-        self.fila_conexoes.put((sucesso, nova_cam, ip))
+        try:
+            url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
+            nova_cam = CameraHandler(url, canal)
+            sucesso = nova_cam.iniciar()
+            self.fila_conexoes.put((sucesso, nova_cam, ip))
+        except Exception as e:
+            print(f"Erro crítico na thread de conexão ({ip}): {e}")
+            self.fila_conexoes.put((False, None, ip))
 
     def _pos_conexao(self, sucesso, camera_obj, ip):
         if sucesso: self.camera_handlers[ip] = camera_obj
