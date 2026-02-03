@@ -123,20 +123,7 @@ class CentralMonitoramento(ctk.CTk):
         self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color="#2b2b2b", height=50)
         self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
 
-        # Botões do topo (alinhados à esquerda)
-        self.btn_renomear = ctk.CTkButton(self.painel_topo, text="Renomear", command=self.alternar_edicao_nome,
-                                        fg_color="#F57C00", hover_color="#E65100", width=100, state="disabled")
-        self.btn_renomear.pack(side="left", padx=5)
-
-        self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar", command=self.limpar_slot_atual,
-                                             fg_color="#c62828", hover_color="#b71c1c", width=120)
-        self.btn_limpar_slot.pack(side="left", padx=5)
-
-        self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="Tela Cheia [ESC]", command=self.entrar_tela_cheia,
-                                            fg_color="#1F6AA5", hover_color="#154a73", width=120)
-        self.btn_fullscreen.pack(side="left", padx=5)
-
-        # Info da câmera (alinhada após os botões)
+        # Info da câmera (alinhada à esquerda)
         self.container_info_topo = ctk.CTkFrame(self.painel_topo, fg_color="transparent")
         self.container_info_topo.pack(side="left", padx=10, pady=5)
 
@@ -147,6 +134,19 @@ class CentralMonitoramento(ctk.CTk):
         self.lbl_ip_topo = ctk.CTkLabel(self.container_info_topo, text="",
                                         font=("Roboto", 13), text_color="#AAAAAA")
         self.lbl_ip_topo.pack(side="left", padx=(5, 0))
+
+        # Botões do topo (alinhados à direita)
+        self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="Tela Cheia [ESC]", command=self.entrar_tela_cheia,
+                                            fg_color="#1F6AA5", hover_color="#154a73", width=120)
+        self.btn_fullscreen.pack(side="right", padx=5)
+
+        self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar", command=self.limpar_slot_atual,
+                                             fg_color="#c62828", hover_color="#b71c1c", width=120)
+        self.btn_limpar_slot.pack(side="right", padx=5)
+
+        self.btn_renomear = ctk.CTkButton(self.painel_topo, text="Renomear", command=self.alternar_edicao_nome,
+                                        fg_color="#F57C00", hover_color="#E65100", width=100, state="disabled")
+        self.btn_renomear.pack(side="right", padx=5)
 
         self.entry_nome = ctk.CTkEntry(self.painel_topo, width=300, placeholder_text="Nome da câmera...")
         # Pack gerenciado pelo botão renomear
