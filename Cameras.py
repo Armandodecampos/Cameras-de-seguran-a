@@ -436,11 +436,15 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_frame.pack_forget()
         self.grid_frame.pack(expand=True, fill="both", padx=0, pady=0)
         
-        for frm in self.slot_frames:
-            frm.grid_configure(padx=0, pady=0, sticky="nsew")
-            frm.configure(corner_radius=0)
-            for child in frm.winfo_children():
-                child.pack_configure(padx=0, pady=0)
+        indices_visiveis = [self.slot_maximized] if self.slot_maximized is not None else range(len(self.slot_frames))
+        for i, frm in enumerate(self.slot_frames):
+            if i in indices_visiveis:
+                frm.grid_configure(padx=0, pady=0, sticky="nsew")
+                frm.configure(corner_radius=0)
+                for child in frm.winfo_children():
+                    child.pack_configure(padx=0, pady=0)
+            else:
+                frm.grid_forget()
 
         self.btn_sair_fs = ctk.CTkButton(self.main_frame, text="✖ SAIR", width=100, height=40,
                                          fg_color="#c62828", command=self.sair_tela_cheia)
@@ -455,18 +459,26 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         self.main_frame.grid_configure(column=1, columnspan=1)
         
-        for frm in self.slot_frames:
-            frm.grid_configure(padx=1, pady=1, sticky="nsew")
-            frm.configure(corner_radius=2)
-            for child in frm.winfo_children():
-                child.pack_configure(padx=2, pady=2)
+        indices_visiveis = [self.slot_maximized] if self.slot_maximized is not None else range(len(self.slot_frames))
+        for i, frm in enumerate(self.slot_frames):
+            if i in indices_visiveis:
+                frm.grid_configure(padx=1, pady=1, sticky="nsew")
+                frm.configure(corner_radius=2)
+                for child in frm.winfo_children():
+                    child.pack_configure(padx=2, pady=2)
+            else:
+                frm.grid_forget()
 
         self.painel_topo.pack_forget()
         self.painel_base.pack_forget()
         self.grid_frame.pack_forget()
         self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
         self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
-        self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10))
+
+        # Ajusta padding do grid_frame: 0 se estiver maximizado, padrão se não estiver
+        padx_grid = 0 if self.slot_maximized is not None else 10
+        pady_grid = 0 if self.slot_maximized is not None else (0, 10)
+        self.grid_frame.pack(side="top", expand=True, fill="both", padx=padx_grid, pady=pady_grid)
 
     def trocar_qualidade(self, ip, novo_canal):
         if not ip: return
