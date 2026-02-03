@@ -254,14 +254,15 @@ class CentralMonitoramento(ctk.CTk):
         if ip_foco: self.trocar_qualidade(ip_foco, 102)
 
     def selecionar_slot(self, index):
-        try:
-            self.slot_frames[self.slot_selecionado].configure(border_color="black", border_width=2)
-        except: pass
+        # Desmarca todos para garantir que não haja fantasmas de seleção
+        for frm in self.slot_frames:
+            frm.configure(border_color="black", border_width=2)
 
         ip_anterior = self.ip_selecionado
         self.slot_selecionado = index
         
         self.slot_frames[index].configure(border_color="red", border_width=2)
+        self.title(f"Monitoramento ABI - Slot {index + 1} selecionado")
 
         ip_novo = self.grid_cameras[index]
         if ip_novo and ip_novo != "0.0.0.0":
@@ -311,11 +312,11 @@ class CentralMonitoramento(ctk.CTk):
         if self.slot_maximized == idx: self.restaurar_grid()
 
         self.salvar_grid()
-        self.atualizar_botoes_controle()
         
-        # 5. FORÇA A ATUALIZAÇÃO VISUAL IMEDIATA
+        # 5. FORÇA A ATUALIZAÇÃO VISUAL IMEDIATA E SINCRONIZA SELEÇÃO
         self.update_idletasks()
         self.focus_force()
+        self.selecionar_slot(idx)
 
     def salvar_grid(self):
         try:
@@ -375,8 +376,12 @@ class CentralMonitoramento(ctk.CTk):
         # --- ATUALIZAÇÃO CRÍTICA ---
         # 1. Limpa o slot completamente antes de atribuir novo
         self.grid_cameras[idx] = ip
+
+        # Reset visual imediato
+        if hasattr(self.slot_labels[idx], 'image'):
+            self.slot_labels[idx].image = None
+
         self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
-        self.slot_labels[idx].image = None
         self.update_idletasks() # Força a interface a mostrar "Conectando"
         # ---------------------------
         
@@ -479,22 +484,24 @@ class CentralMonitoramento(ctk.CTk):
 
     def loop_exibicao(self):
         indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
+        frames_cache = {}
 
         for i in indices:
             ip = self.grid_cameras[i]
             if not ip or ip == "0.0.0.0": continue
-            handler = self.camera_handlers.get(ip)
             
-            # --- CORREÇÃO DE FALHA SILENCIOSA ---
-            # Se tem IP no grid, mas não tem handler, tenta reconectar (auto-recovery)
-            if handler is None:
-                self.iniciar_conexao_assincrona(ip, 102)
-                continue
-            # ------------------------------------
+            if ip not in frames_cache:
+                handler = self.camera_handlers.get(ip)
+                if handler is None:
+                    self.iniciar_conexao_assincrona(ip, 102)
+                    frames_cache[ip] = None
+                    continue
+                if handler == "CONECTANDO":
+                    frames_cache[ip] = None
+                    continue
+                frames_cache[ip] = handler.pegar_frame()
 
-            if handler == "CONECTANDO": continue
-
-            frame = handler.pegar_frame()
+            frame = frames_cache[ip]
             if frame is not None:
                 try:
                     w = self.slot_frames[i].winfo_width()
