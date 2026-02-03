@@ -6,6 +6,7 @@ import os
 import threading
 import time
 import socket
+import queue
 from tkinter import messagebox
 
 # Configuração de baixa latência para OpenCV/FFMPEG
@@ -88,6 +89,7 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_cameras = self.carregar_grid()
         self.slot_selecionado = 0
         self.press_data = None
+        self.fila_conexoes = queue.Queue()
 
         # --- LAYOUT ---
         self.grid_columnconfigure(1, weight=1)
@@ -218,11 +220,15 @@ class CentralMonitoramento(ctk.CTk):
 
                     for idx in [index, target_idx]:
                         ip = self.grid_cameras[idx]
-                        if not ip:
-                            self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+                        if not ip or ip == "0.0.0.0":
+                            try:
+                                self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+                            except: pass
                             self.slot_labels[idx].image = None
                         elif ip not in self.camera_handlers:
-                            self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
+                            try:
+                                self.slot_labels[idx].configure(image=None, text=f"CARREGANDO\n{ip}")
+                            except: pass
                             self.slot_labels[idx].image = None
 
                     self.salvar_grid()
@@ -288,7 +294,10 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_cameras[idx] = "0.0.0.0"
         
         # 2. Reseta visualmente o label e apaga a referência da imagem
-        self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+        try:
+            self.slot_labels[idx].configure(image=None, text=f"ESPAÇO {idx+1}")
+        except Exception as e:
+            print(f"Aviso: Erro ao limpar visual do slot {idx}: {e}")
         self.slot_labels[idx].image = None 
 
         # 3. Para a câmera se ela não estiver em nenhum outro slot
@@ -378,10 +387,13 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_cameras[idx] = ip
 
         # Reset visual imediato
+        try:
+            self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
+        except Exception as e:
+            print(f"Aviso: Erro ao resetar visual do slot {idx}: {e}")
+
         if hasattr(self.slot_labels[idx], 'image'):
             self.slot_labels[idx].image = None
-
-        self.slot_labels[idx].configure(image=None, text=f"CONECTANDO\n{ip}")
         self.update_idletasks() # Força a interface a mostrar "Conectando"
         # ---------------------------
         
@@ -474,7 +486,7 @@ class CentralMonitoramento(ctk.CTk):
         url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
         nova_cam = CameraHandler(url, canal)
         sucesso = nova_cam.iniciar()
-        self.after(0, lambda: self._pos_conexao(sucesso, nova_cam, ip))
+        self.fila_conexoes.put((sucesso, nova_cam, ip))
 
     def _pos_conexao(self, sucesso, camera_obj, ip):
         if sucesso: self.camera_handlers[ip] = camera_obj
@@ -483,6 +495,13 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_botoes_controle()
 
     def loop_exibicao(self):
+        # Processar resultados de conexões em background
+        while not self.fila_conexoes.empty():
+            try:
+                sucesso, camera_obj, ip = self.fila_conexoes.get_nowait()
+                self._pos_conexao(sucesso, camera_obj, ip)
+            except: pass
+
         indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
         frames_cache = {}
 
