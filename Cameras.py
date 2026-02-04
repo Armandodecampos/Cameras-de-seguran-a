@@ -81,12 +81,18 @@ class CentralMonitoramento(ctk.CTk):
 
         self.title("Sistema de Monitoramento ABI - Full Control V4")
         self.geometry("1200x800")
+        self.state('zoomed')
         ctk.set_appearance_mode("Dark")
 
         self.bind("<Escape>", lambda event: self.sair_tela_cheia())
 
         # Configurações
         self.arquivo_config = os.path.join(os.path.expanduser("~"), "config_cameras_abi.json")
+        self.arquivo_posicao = os.path.join(os.path.expanduser("~"), "posicao_janela_abi.json")
+
+        self.carregar_posicao_janela()
+        self.protocol("WM_DELETE_WINDOW", self.ao_fechar)
+
         self.ips_unicos = self.gerar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.botoes_referencia = {}
@@ -209,6 +215,9 @@ class CentralMonitoramento(ctk.CTk):
         self.alternar_todos_streams()
         self.loop_exibicao()
 
+        # Inicia em tela cheia após um pequeno delay para estabilidade
+        self.after(500, self.entrar_tela_cheia)
+
     # --- LÓGICA DO GRID ---
     def maximizar_slot(self, index):
         self.grid_frame.pack_configure(padx=0, pady=0)
@@ -299,7 +308,7 @@ class CentralMonitoramento(ctk.CTk):
                 child.pack_configure(padx=2, pady=2)
                 
         self.slot_maximized = None
-        if ip_foco: self.trocar_qualidade(ip_foco, 102)
+        if ip_foco: self.trocar_qualidade(ip_foco, 101)
 
     def selecionar_slot(self, index):
         if not (0 <= index < 20): return
@@ -355,6 +364,41 @@ class CentralMonitoramento(ctk.CTk):
         if self.slot_maximized == idx: self.restaurar_grid()
         self.selecionar_slot(idx)
 
+    def salvar_posicao_janela(self):
+        try:
+            dados = {
+                "geometria": self.geometry(),
+                "estado": self.state()
+            }
+            with open(self.arquivo_posicao, "w", encoding='utf-8') as f:
+                json.dump(dados, f, ensure_ascii=False, indent=4)
+        except: pass
+
+    def carregar_posicao_janela(self):
+        if os.path.exists(self.arquivo_posicao):
+            try:
+                with open(self.arquivo_posicao, "r", encoding='utf-8') as f:
+                    dados = json.load(f)
+                    geo = dados.get("geometria")
+                    if geo:
+                        # Validação para garantir que a janela não abra fora da tela
+                        try:
+                            partes = geo.replace('x', '+').split('+')
+                            if len(partes) >= 4:
+                                x, y = int(partes[2]), int(partes[3])
+                                if -10000 < x < 10000 and -10000 < y < 10000:
+                                    self.geometry(geo)
+                        except: pass
+
+                    estado = dados.get("estado")
+                    if estado in ['normal', 'zoomed']:
+                        self.state(estado)
+            except: pass
+
+    def ao_fechar(self):
+        self.salvar_posicao_janela()
+        self.destroy()
+
     def salvar_grid(self):
         try:
             with open(self.arquivo_grid, "w", encoding='utf-8') as f:
@@ -376,7 +420,7 @@ class CentralMonitoramento(ctk.CTk):
     def alternar_todos_streams(self):
         for ip in set(self.grid_cameras):
             if ip and ip != "0.0.0.0" and ip not in self.camera_handlers:
-                self.iniciar_conexao_assincrona(ip, 102)
+                self.iniciar_conexao_assincrona(ip, 101)
 
     def atualizar_botoes_controle(self):
         if self.slot_maximized is not None:
@@ -422,7 +466,7 @@ class CentralMonitoramento(ctk.CTk):
         # Inicia nova conexão
         if ip != "0.0.0.0":
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-            self.iniciar_conexao_assincrona(ip, 102)
+            self.iniciar_conexao_assincrona(ip, 101)
 
     def selecionar_camera(self, ip):
         if self.slot_selecionado is not None:
@@ -503,7 +547,7 @@ class CentralMonitoramento(ctk.CTk):
             return nome[:max_chars-3] + "..."
         return nome
 
-    def iniciar_conexao_assincrona(self, ip, canal=102):
+    def iniciar_conexao_assincrona(self, ip, canal=101):
         if not ip or ip == "0.0.0.0": return
         
         # Cooldown para evitar spam em caso de falha (10 segundos)
@@ -561,6 +605,8 @@ class CentralMonitoramento(ctk.CTk):
             agora = time.time()
             indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
             frames_cache = {}
+            # Cache para evitar reprocessar o mesmo IP com mesmo tamanho no mesmo ciclo
+            cache_processados = {}
 
             for i in indices:
                 ip = self.grid_cameras[i]
@@ -573,10 +619,25 @@ class CentralMonitoramento(ctk.CTk):
                         except: pass
                         continue
 
+                # Dimensões do slot
+                w = self.slot_frames[i].winfo_width()
+                h = self.slot_frames[i].winfo_height()
+                w = max(10, w - 6)
+                h = max(10, h - 6)
+
+                # Se já processamos este IP para este tamanho neste ciclo, usa o cache
+                chave_cache = (ip, w, h)
+                if chave_cache in cache_processados:
+                    ctk_img = cache_processados[chave_cache]
+                    try: self.slot_labels[i].configure(image=ctk_img, text="")
+                    except: pass
+                    self.slot_labels[i].image = ctk_img
+                    continue
+
                 if ip not in frames_cache:
                     handler = self.camera_handlers.get(ip)
                     if handler is None:
-                        self.iniciar_conexao_assincrona(ip, 102)
+                        self.iniciar_conexao_assincrona(ip, 101)
                         frames_cache[ip] = None
                         continue
                     if handler == "CONECTANDO":
@@ -587,12 +648,8 @@ class CentralMonitoramento(ctk.CTk):
                 frame = frames_cache[ip]
                 if frame is not None:
                     try:
-                        w = self.slot_frames[i].winfo_width()
-                        h = self.slot_frames[i].winfo_height()
-                        w = max(10, w - 6)
-                        h = max(10, h - 6)
-
-                        frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
+                        # INTER_AREA é melhor para redução de tamanho (downscaling)
+                        frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
 
                         pos = (10, h - 10)
                         cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
@@ -600,6 +657,9 @@ class CentralMonitoramento(ctk.CTk):
 
                         pil_img = Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB))
                         ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
+
+                        # Salva no cache deste ciclo
+                        cache_processados[chave_cache] = ctk_img
 
                         # Atualização final do label
                         try: self.slot_labels[i].configure(image=ctk_img, text="")
