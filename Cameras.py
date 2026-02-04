@@ -66,6 +66,16 @@ class CameraHandler:
 
 # --- INTERFACE PRINCIPAL ---
 class CentralMonitoramento(ctk.CTk):
+    # Cores do tema moderno
+    BG_MAIN = "#121212"
+    BG_SIDEBAR = "#1A1A1A"
+    BG_PANEL = "#1E1E1E"
+    ACCENT_RED = "#D32F2F"
+    ACCENT_WINE = "#7B1010"
+    TEXT_P = "#E0E0E0"
+    TEXT_S = "#9E9E9E"
+    GRAY_DARK = "#424242"
+
     def __init__(self):
         super().__init__()
 
@@ -97,10 +107,10 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # 1. BARRA LATERAL
-        self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0)
+        self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
 
-        ctk.CTkLabel(self.sidebar, text="CÂMERAS", font=("Roboto", 20, "bold")).pack(pady=(15, 5))
+        ctk.CTkLabel(self.sidebar, text="CÂMERAS", font=("Roboto", 20, "bold"), text_color=self.ACCENT_RED).pack(pady=(15, 5))
 
         # Busca
         self.frame_busca = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -114,11 +124,11 @@ class CentralMonitoramento(ctk.CTk):
         self.scroll_frame.pack(expand=True, fill="both", padx=5, pady=5)
 
         # 2. ÁREA PRINCIPAL (Direita)
-        self.main_frame = ctk.CTkFrame(self, fg_color="#1a1a1a", corner_radius=0)
+        self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
         self.main_frame.grid(row=0, column=1, sticky="nsew")
 
         # Topo
-        self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color="#2b2b2b", height=50)
+        self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color=self.BG_PANEL, height=50)
         self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
 
         # Info da câmera (alinhada à esquerda)
@@ -126,24 +136,24 @@ class CentralMonitoramento(ctk.CTk):
         self.container_info_topo.pack(side="left", padx=10, pady=5)
 
         self.lbl_nome_topo = ctk.CTkLabel(self.container_info_topo, text="Nenhuma câmera selecionada",
-                                          font=("Roboto", 15, "bold"), text_color="#5FB6AD")
+                                          font=("Roboto", 15, "bold"), text_color=self.ACCENT_RED)
         self.lbl_nome_topo.pack(side="left")
 
         self.lbl_ip_topo = ctk.CTkLabel(self.container_info_topo, text="",
-                                        font=("Roboto", 13), text_color="#AAAAAA")
+                                        font=("Roboto", 13), text_color=self.TEXT_S)
         self.lbl_ip_topo.pack(side="left", padx=(5, 0))
 
         # Botões do topo (alinhados à direita)
         self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="Tela Cheia [ESC]", command=self.entrar_tela_cheia,
-                                            fg_color="#1F6AA5", hover_color="#154a73", width=120)
+                                            fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED, width=120)
         self.btn_fullscreen.pack(side="right", padx=5)
 
         self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar", command=self.limpar_slot_atual,
-                                             fg_color="#c62828", hover_color="#b71c1c", width=120)
+                                             fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE, width=120)
         self.btn_limpar_slot.pack(side="right", padx=5)
 
         self.btn_renomear = ctk.CTkButton(self.painel_topo, text="Renomear", command=self.alternar_edicao_nome,
-                                        fg_color="#F57C00", hover_color="#E65100", width=100, state="disabled")
+                                        fg_color=self.GRAY_DARK, hover_color=self.TEXT_S, width=100, state="disabled")
         self.btn_renomear.pack(side="right", padx=5)
 
         self.entry_nome = ctk.CTkEntry(self.painel_topo, width=300, placeholder_text="Nome da câmera...")
@@ -153,12 +163,12 @@ class CentralMonitoramento(ctk.CTk):
         self.painel_base = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
 
-        self.btn_toggle_grid = ctk.CTkButton(self.painel_base, text="1 camera", fg_color="#1F6AA5",
-                                             height=40, command=self.toggle_grid_layout)
+        self.btn_toggle_grid = ctk.CTkButton(self.painel_base, text="1 camera", fg_color=self.ACCENT_WINE,
+                                             hover_color=self.ACCENT_RED, height=40, command=self.toggle_grid_layout)
         self.btn_toggle_grid.pack(side="left", expand=True, fill="x", padx=5)
 
         # Grid de Câmeras
-        self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="black")
+        self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10))
 
         for i in range(4): self.grid_frame.grid_rowconfigure(i, weight=1)
@@ -170,7 +180,7 @@ class CentralMonitoramento(ctk.CTk):
             row, col = i // 5, i % 5
             
             # Frame com borda preta
-            frm = ctk.CTkFrame(self.grid_frame, fg_color="#111", corner_radius=2, border_width=2, border_color="black")
+            frm = ctk.CTkFrame(self.grid_frame, fg_color=self.BG_SIDEBAR, corner_radius=2, border_width=2, border_color="black")
             
             frm.grid(row=row, column=col, padx=1, pady=1, sticky="nsew")
             frm.pack_propagate(False)
@@ -300,7 +310,7 @@ class CentralMonitoramento(ctk.CTk):
         ip_anterior = self.ip_selecionado
         self.slot_selecionado = index
         
-        self.slot_frames[index].configure(border_color="red", border_width=2)
+        self.slot_frames[index].configure(border_color=self.ACCENT_RED, border_width=2)
         self.title(f"Monitoramento ABI - Espaço {index + 1} selecionado")
 
         # Reset modo edição se estiver ativo
@@ -316,7 +326,7 @@ class CentralMonitoramento(ctk.CTk):
             nome = self.dados_cameras.get(ip_novo, "")
             self.entry_nome.delete(0, "end")
             self.entry_nome.insert(0, nome)
-            self.pintar_botao(ip_novo, "#1F6AA5")
+            self.pintar_botao(ip_novo, self.ACCENT_WINE)
 
             self.lbl_nome_topo.configure(text=self.formatar_nome(nome if nome else 'Câmera'))
             self.lbl_ip_topo.configure(text=f"({ip_novo})")
@@ -370,9 +380,9 @@ class CentralMonitoramento(ctk.CTk):
 
     def atualizar_botoes_controle(self):
         if self.slot_maximized is not None:
-            self.btn_toggle_grid.configure(text="Minimizar camera", fg_color="#444", hover_color="#333")
+            self.btn_toggle_grid.configure(text="Minimizar camera", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S)
         else:
-            self.btn_toggle_grid.configure(text="Expandir camera", fg_color="#1F6AA5", hover_color="#154a73")
+            self.btn_toggle_grid.configure(text="Expandir camera", fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED)
 
     def toggle_grid_layout(self):
         if self.slot_maximized is not None:
@@ -445,7 +455,7 @@ class CentralMonitoramento(ctk.CTk):
                 frm.grid_forget()
 
         self.btn_sair_fs = ctk.CTkButton(self.main_frame, text="✖ SAIR", width=100, height=40,
-                                         fg_color="#c62828", command=self.sair_tela_cheia)
+                                         fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE, command=self.sair_tela_cheia)
         self.btn_sair_fs.place(relx=0.98, rely=0.02, anchor="ne")
 
     def sair_tela_cheia(self):
@@ -682,15 +692,15 @@ class CentralMonitoramento(ctk.CTk):
             nome = self.dados_cameras.get(ip, f"IP {ip}")
 
             # Frame container para simular o botão
-            frm = ctk.CTkFrame(self.scroll_frame, height=50, fg_color="transparent", border_width=1, border_color="#333")
+            frm = ctk.CTkFrame(self.scroll_frame, height=50, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2)
             frm.pack_propagate(False)
 
             # Labels internos com cores diferentes
-            lbl_nome = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color="#5FB6AD", anchor="w")
+            lbl_nome = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w")
             lbl_nome.pack(fill="x", padx=10, pady=(4, 0))
 
-            lbl_ip = ctk.CTkLabel(frm, text=ip, font=("Roboto", 11), text_color="#AAAAAA", anchor="w")
+            lbl_ip = ctk.CTkLabel(frm, text=ip, font=("Roboto", 11), text_color=self.TEXT_S, anchor="w")
             lbl_ip.pack(fill="x", padx=10, pady=(0, 4))
 
             # Bindings de clique para o frame e para as labels
