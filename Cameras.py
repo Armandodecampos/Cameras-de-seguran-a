@@ -81,7 +81,6 @@ class CentralMonitoramento(ctk.CTk):
 
         self.title("Sistema de Monitoramento ABI - Full Control V4")
         self.geometry("1200x800")
-        self.state('zoomed')
         ctk.set_appearance_mode("Dark")
 
         self.bind("<Escape>", lambda event: self.sair_tela_cheia())
@@ -90,6 +89,7 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_config = os.path.join(os.path.expanduser("~"), "config_cameras_abi.json")
         self.arquivo_posicao = os.path.join(os.path.expanduser("~"), "posicao_janela_abi.json")
 
+        # Carrega posição e estado salvos (ou inicia maximizado por padrão)
         self.carregar_posicao_janela()
         self.protocol("WM_DELETE_WINDOW", self.ao_fechar)
 
@@ -308,7 +308,7 @@ class CentralMonitoramento(ctk.CTk):
                 child.pack_configure(padx=2, pady=2)
                 
         self.slot_maximized = None
-        if ip_foco: self.trocar_qualidade(ip_foco, 101)
+        if ip_foco: self.trocar_qualidade(ip_foco, 102)
 
     def selecionar_slot(self, index):
         if not (0 <= index < 20): return
@@ -375,14 +375,17 @@ class CentralMonitoramento(ctk.CTk):
         except: pass
 
     def carregar_posicao_janela(self):
+        # Valor padrão caso não exista arquivo
+        estado_inicial = 'zoomed'
+
         if os.path.exists(self.arquivo_posicao):
             try:
                 with open(self.arquivo_posicao, "r", encoding='utf-8') as f:
                     dados = json.load(f)
                     geo = dados.get("geometria")
                     if geo:
-                        # Validação para garantir que a janela não abra fora da tela
                         try:
+                            # Validação básica de coordenadas para evitar abrir fora da tela
                             partes = geo.replace('x', '+').split('+')
                             if len(partes) >= 4:
                                 x, y = int(partes[2]), int(partes[3])
@@ -392,7 +395,18 @@ class CentralMonitoramento(ctk.CTk):
 
                     estado = dados.get("estado")
                     if estado in ['normal', 'zoomed']:
-                        self.state(estado)
+                        estado_inicial = estado
+            except: pass
+
+        # Aplica o estado com um pequeno delay para garantir que o WM esteja pronto
+        self.after(100, lambda: self.set_window_state(estado_inicial))
+
+    def set_window_state(self, estado):
+        try:
+            self.state(estado)
+        except:
+            # Fallback para sistemas que não suportam 'zoomed' via state()
+            try: self.attributes('-zoomed', True)
             except: pass
 
     def ao_fechar(self):
@@ -420,7 +434,7 @@ class CentralMonitoramento(ctk.CTk):
     def alternar_todos_streams(self):
         for ip in set(self.grid_cameras):
             if ip and ip != "0.0.0.0" and ip not in self.camera_handlers:
-                self.iniciar_conexao_assincrona(ip, 101)
+                self.iniciar_conexao_assincrona(ip, 102)
 
     def atualizar_botoes_controle(self):
         if self.slot_maximized is not None:
@@ -466,7 +480,7 @@ class CentralMonitoramento(ctk.CTk):
         # Inicia nova conexão
         if ip != "0.0.0.0":
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-            self.iniciar_conexao_assincrona(ip, 101)
+            self.iniciar_conexao_assincrona(ip, 102)
 
     def selecionar_camera(self, ip):
         if self.slot_selecionado is not None:
@@ -478,9 +492,13 @@ class CentralMonitoramento(ctk.CTk):
             self.botoes_referencia[ip]['frame'].configure(fg_color=cor)
 
     def entrar_tela_cheia(self):
-        if self.em_tela_cheia: return
-        self.em_tela_cheia = True
-        self.attributes("-fullscreen", True)
+        try:
+            if not self.winfo_exists(): return
+            if self.em_tela_cheia: return
+            self.em_tela_cheia = True
+            self.attributes("-fullscreen", True)
+        except: return
+
         self.sidebar.grid_forget()
         self.main_frame.grid_configure(column=0, columnspan=2)
         self.painel_topo.pack_forget()
@@ -547,7 +565,7 @@ class CentralMonitoramento(ctk.CTk):
             return nome[:max_chars-3] + "..."
         return nome
 
-    def iniciar_conexao_assincrona(self, ip, canal=101):
+    def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip or ip == "0.0.0.0": return
         
         # Cooldown para evitar spam em caso de falha (10 segundos)
@@ -637,7 +655,7 @@ class CentralMonitoramento(ctk.CTk):
                 if ip not in frames_cache:
                     handler = self.camera_handlers.get(ip)
                     if handler is None:
-                        self.iniciar_conexao_assincrona(ip, 101)
+                        self.iniciar_conexao_assincrona(ip, 102)
                         frames_cache[ip] = None
                         continue
                     if handler == "CONECTANDO":
@@ -648,8 +666,8 @@ class CentralMonitoramento(ctk.CTk):
                 frame = frames_cache[ip]
                 if frame is not None:
                     try:
-                        # INTER_AREA é melhor para redução de tamanho (downscaling)
-                        frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_AREA)
+                        # INTER_LINEAR é um bom equilíbrio entre qualidade e performance
+                        frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
 
                         pos = (10, h - 10)
                         cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
