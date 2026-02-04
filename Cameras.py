@@ -83,15 +83,10 @@ class CentralMonitoramento(ctk.CTk):
         self.geometry("1200x800")
         ctk.set_appearance_mode("Dark")
 
-        self.protocol("WM_DELETE_WINDOW", self.ao_fechar)
         self.bind("<Escape>", lambda event: self.sair_tela_cheia())
 
         # Configurações
         self.arquivo_config = os.path.join(os.path.expanduser("~"), "config_cameras_abi.json")
-        self.arquivo_grid = os.path.join(os.path.expanduser("~"), "grid_config_abi.json")
-        self.arquivo_janela = os.path.join(os.path.expanduser("~"), "posicao_janela_abi.json")
-        self.carregar_posicao_janela()
-
         self.ips_unicos = self.gerar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.botoes_referencia = {}
@@ -100,6 +95,7 @@ class CentralMonitoramento(ctk.CTk):
         self.camera_handlers = {}
         self.em_tela_cheia = False
         self.slot_maximized = None
+        self.arquivo_grid = os.path.join(os.path.expanduser("~"), "grid_config_abi.json")
         self.grid_cameras = self.carregar_grid()
         self.slot_selecionado = 0
         self.press_data = None
@@ -151,10 +147,6 @@ class CentralMonitoramento(ctk.CTk):
         self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="Tela Cheia [ESC]", command=self.entrar_tela_cheia,
                                             fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED, width=120)
         self.btn_fullscreen.pack(side="right", padx=5)
-
-        self.btn_trocar_tela = ctk.CTkButton(self.painel_topo, text="Trocar Monitor", command=self.trocar_monitor,
-                                             fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED, width=120)
-        self.btn_trocar_tela.pack(side="right", padx=5)
 
         self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar", command=self.limpar_slot_atual,
                                              fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE, width=120)
@@ -369,16 +361,6 @@ class CentralMonitoramento(ctk.CTk):
                 json.dump(self.grid_cameras, f, ensure_ascii=False, indent=4)
         except: pass
 
-    def salvar_posicao_janela(self):
-        try:
-            dados = {
-                "geometria": self.geometry(),
-                "estado": self.state()
-            }
-            with open(self.arquivo_janela, "w", encoding='utf-8') as f:
-                json.dump(dados, f, ensure_ascii=False, indent=4)
-        except: pass
-
     def carregar_grid(self):
         grid = ["0.0.0.0"] * 20
         if os.path.exists(self.arquivo_grid):
@@ -390,59 +372,6 @@ class CentralMonitoramento(ctk.CTk):
                             if dados[i]: grid[i] = dados[i]
             except: pass
         return grid
-
-    def carregar_posicao_janela(self):
-        if os.path.exists(self.arquivo_janela):
-            try:
-                with open(self.arquivo_janela, "r", encoding='utf-8') as f:
-                    dados = json.load(f)
-                    if "geometria" in dados:
-                        geo = dados["geometria"]
-                        # Validação: verifica se o formato parece correto e se X/Y são razoáveis
-                        try:
-                            if "+" in geo and "x" in geo:
-                                partes = geo.replace('x', '+').split('+')
-                                x = int(partes[-2])
-                                y = int(partes[-1])
-                                # Limite de sanidade de 10.000 pixels (cobre maioria dos setups multi-monitor)
-                                if -10000 < x < 10000 and -10000 < y < 10000:
-                                    self.geometry(geo)
-                        except: pass
-                    if "estado" in dados:
-                        if dados["estado"] in ["normal", "zoomed"]:
-                            try: self.state(dados["estado"])
-                            except: pass
-            except: pass
-
-    def trocar_monitor(self):
-        try:
-            # Pega a largura da tela atual para pular para a próxima
-            largura_tela = self.winfo_screenwidth()
-            x_atual = self.winfo_x()
-            y_atual = self.winfo_y()
-
-            # Calcula o próximo X (assume monitores lado a lado)
-            novo_x = x_atual + largura_tela
-
-            # Se ultrapassar o que seriam 3 monitores, volta para o primeiro
-            if novo_x >= largura_tela * 3:
-                novo_x = 0
-
-            # Mantém o estado (maximizado ou não)
-            estado = self.state()
-            if estado == "zoomed":
-                self.state("normal")
-                self.update_idletasks()
-
-            self.geometry(f"+{novo_x}+{y_atual}")
-
-            if estado == "zoomed":
-                self.after(200, lambda: self.state("zoomed"))
-        except: pass
-
-    def ao_fechar(self):
-        self.salvar_posicao_janela()
-        self.destroy()
 
     def alternar_todos_streams(self):
         for ip in set(self.grid_cameras):
