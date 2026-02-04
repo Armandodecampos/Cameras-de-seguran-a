@@ -605,10 +605,17 @@ class CentralMonitoramento(ctk.CTk):
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
-        for ip, item in self.botoes_referencia.items():
+
+        # Garante que os itens sejam exibidos na ordem alfabética atualizada
+        for ip in self.obter_ips_ordenados():
+            item = self.botoes_referencia.get(ip)
+            if not item: continue
+
             nome = self.dados_cameras.get(ip, "").lower()
-            if termo in ip or termo in nome: item['frame'].pack(fill="x", pady=2)
-            else: item['frame'].pack_forget()
+            if termo in ip or termo in nome:
+                item['frame'].pack(fill="x", pady=2)
+            else:
+                item['frame'].pack_forget()
 
         # Scroll para o topo ao filtrar
         try:
@@ -639,10 +646,12 @@ class CentralMonitoramento(ctk.CTk):
             with open(self.arquivo_config, "w", encoding='utf-8') as f:
                 json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
 
-            # Atualiza labels
+            # Atualiza labels e reordena a lista
             self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
             self.lbl_nome_topo.configure(text=self.formatar_nome(novo_nome))
             self.lbl_ip_topo.configure(text=f"({self.ip_selecionado})")
+
+            self.filtrar_lista()
 
     def gerar_lista_ips(self):
         base = ["192.168.7.2", "192.168.7.3", "192.168.7.4", "192.168.7.20", "192.168.7.21",
@@ -660,8 +669,16 @@ class CentralMonitoramento(ctk.CTk):
             except: pass
         return {}
 
+    def obter_ips_ordenados(self):
+        # Retorna a lista de IPs ordenados alfabeticamente pelo nome da câmera
+        def chave_ordenacao(ip):
+            nome = self.dados_cameras.get(ip, f"IP {ip}")
+            return nome.lower()
+
+        return sorted(self.ips_unicos, key=chave_ordenacao)
+
     def criar_botoes_iniciais(self):
-        for ip in self.ips_unicos:
+        for ip in self.obter_ips_ordenados():
             nome = self.dados_cameras.get(ip, f"IP {ip}")
 
             # Frame container para simular o botão
