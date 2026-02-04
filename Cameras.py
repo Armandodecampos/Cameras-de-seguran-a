@@ -606,6 +606,10 @@ class CentralMonitoramento(ctk.CTk):
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
 
+        # Primeiro, remove todos do pack para garantir que a ordem seja reiniciada
+        for item in self.botoes_referencia.values():
+            item['frame'].pack_forget()
+
         # Garante que os itens sejam exibidos na ordem alfabética atualizada
         for ip in self.obter_ips_ordenados():
             item = self.botoes_referencia.get(ip)
@@ -614,8 +618,6 @@ class CentralMonitoramento(ctk.CTk):
             nome = self.dados_cameras.get(ip, "").lower()
             if termo in ip or termo in nome:
                 item['frame'].pack(fill="x", pady=2)
-            else:
-                item['frame'].pack_forget()
 
         # Scroll para o topo ao filtrar
         try:
