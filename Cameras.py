@@ -83,10 +83,15 @@ class CentralMonitoramento(ctk.CTk):
         self.geometry("1200x800")
         ctk.set_appearance_mode("Dark")
 
+        self.protocol("WM_DELETE_WINDOW", self.ao_fechar)
         self.bind("<Escape>", lambda event: self.sair_tela_cheia())
 
         # Configurações
         self.arquivo_config = os.path.join(os.path.expanduser("~"), "config_cameras_abi.json")
+        self.arquivo_grid = os.path.join(os.path.expanduser("~"), "grid_config_abi.json")
+        self.arquivo_janela = os.path.join(os.path.expanduser("~"), "posicao_janela_abi.json")
+        self.carregar_posicao_janela()
+
         self.ips_unicos = self.gerar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.botoes_referencia = {}
@@ -95,7 +100,6 @@ class CentralMonitoramento(ctk.CTk):
         self.camera_handlers = {}
         self.em_tela_cheia = False
         self.slot_maximized = None
-        self.arquivo_grid = os.path.join(os.path.expanduser("~"), "grid_config_abi.json")
         self.grid_cameras = self.carregar_grid()
         self.slot_selecionado = 0
         self.press_data = None
@@ -361,6 +365,16 @@ class CentralMonitoramento(ctk.CTk):
                 json.dump(self.grid_cameras, f, ensure_ascii=False, indent=4)
         except: pass
 
+    def salvar_posicao_janela(self):
+        try:
+            dados = {
+                "geometria": self.geometry(),
+                "estado": self.state()
+            }
+            with open(self.arquivo_janela, "w", encoding='utf-8') as f:
+                json.dump(dados, f, ensure_ascii=False, indent=4)
+        except: pass
+
     def carregar_grid(self):
         grid = ["0.0.0.0"] * 20
         if os.path.exists(self.arquivo_grid):
@@ -372,6 +386,23 @@ class CentralMonitoramento(ctk.CTk):
                             if dados[i]: grid[i] = dados[i]
             except: pass
         return grid
+
+    def carregar_posicao_janela(self):
+        if os.path.exists(self.arquivo_janela):
+            try:
+                with open(self.arquivo_janela, "r", encoding='utf-8') as f:
+                    dados = json.load(f)
+                    if "geometria" in dados:
+                        self.geometry(dados["geometria"])
+                    if "estado" in dados:
+                        if dados["estado"] in ["normal", "zoomed"]:
+                            try: self.state(dados["estado"])
+                            except: pass
+            except: pass
+
+    def ao_fechar(self):
+        self.salvar_posicao_janela()
+        self.destroy()
 
     def alternar_todos_streams(self):
         for ip in set(self.grid_cameras):
