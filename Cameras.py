@@ -107,10 +107,8 @@ class CentralMonitoramento(ctk.CTk):
         self.frame_busca.pack(fill="x", padx=10, pady=5)
 
         self.entry_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="Filtrar...")
-        self.entry_busca.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.entry_busca.pack(fill="x", expand=True)
         self.entry_busca.bind("<KeyRelease>", lambda e: self.filtrar_lista())
-
-        ctk.CTkButton(self.frame_busca, text="🔍", width=40, command=self.filtrar_lista, fg_color="#444").pack(side="left")
 
         self.scroll_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=5, pady=5)
