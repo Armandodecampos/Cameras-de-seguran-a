@@ -128,7 +128,7 @@ class CentralMonitoramento(ctk.CTk):
         self.container_info_topo.pack(side="left", padx=10, pady=5)
 
         self.lbl_nome_topo = ctk.CTkLabel(self.container_info_topo, text="Nenhuma câmera selecionada",
-                                          font=("Roboto", 15, "bold"), text_color="white")
+                                          font=("Roboto", 15, "bold"), text_color="#5FB6AD")
         self.lbl_nome_topo.pack(side="left")
 
         self.lbl_ip_topo = ctk.CTkLabel(self.container_info_topo, text="",
@@ -610,6 +610,13 @@ class CentralMonitoramento(ctk.CTk):
             if termo in ip or termo in nome: item['frame'].pack(fill="x", pady=2)
             else: item['frame'].pack_forget()
 
+        # Scroll para o topo ao filtrar
+        try:
+            if hasattr(self.scroll_frame, "_parent_canvas"):
+                self.scroll_frame._parent_canvas.yview_moveto(0)
+        except:
+            pass
+
     def alternar_edicao_nome(self):
         if not self.ip_selecionado: return
 
@@ -663,7 +670,7 @@ class CentralMonitoramento(ctk.CTk):
             frm.pack_propagate(False)
 
             # Labels internos com cores diferentes
-            lbl_nome = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color="white", anchor="w")
+            lbl_nome = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color="#5FB6AD", anchor="w")
             lbl_nome.pack(fill="x", padx=10, pady=(4, 0))
 
             lbl_ip = ctk.CTkLabel(frm, text=ip, font=("Roboto", 11), text_color="#AAAAAA", anchor="w")
