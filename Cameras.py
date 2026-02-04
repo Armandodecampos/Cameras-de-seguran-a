@@ -152,6 +152,10 @@ class CentralMonitoramento(ctk.CTk):
                                             fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED, width=120)
         self.btn_fullscreen.pack(side="right", padx=5)
 
+        self.btn_trocar_tela = ctk.CTkButton(self.painel_topo, text="Trocar Monitor", command=self.trocar_monitor,
+                                             fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED, width=120)
+        self.btn_trocar_tela.pack(side="right", padx=5)
+
         self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar", command=self.limpar_slot_atual,
                                              fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE, width=120)
         self.btn_limpar_slot.pack(side="right", padx=5)
@@ -393,12 +397,48 @@ class CentralMonitoramento(ctk.CTk):
                 with open(self.arquivo_janela, "r", encoding='utf-8') as f:
                     dados = json.load(f)
                     if "geometria" in dados:
-                        self.geometry(dados["geometria"])
+                        geo = dados["geometria"]
+                        # Validação: verifica se o formato parece correto e se X/Y são razoáveis
+                        try:
+                            if "+" in geo and "x" in geo:
+                                partes = geo.replace('x', '+').split('+')
+                                x = int(partes[-2])
+                                y = int(partes[-1])
+                                # Limite de sanidade de 10.000 pixels (cobre maioria dos setups multi-monitor)
+                                if -10000 < x < 10000 and -10000 < y < 10000:
+                                    self.geometry(geo)
+                        except: pass
                     if "estado" in dados:
                         if dados["estado"] in ["normal", "zoomed"]:
                             try: self.state(dados["estado"])
                             except: pass
             except: pass
+
+    def trocar_monitor(self):
+        try:
+            # Pega a largura da tela atual para pular para a próxima
+            largura_tela = self.winfo_screenwidth()
+            x_atual = self.winfo_x()
+            y_atual = self.winfo_y()
+
+            # Calcula o próximo X (assume monitores lado a lado)
+            novo_x = x_atual + largura_tela
+
+            # Se ultrapassar o que seriam 3 monitores, volta para o primeiro
+            if novo_x >= largura_tela * 3:
+                novo_x = 0
+
+            # Mantém o estado (maximizado ou não)
+            estado = self.state()
+            if estado == "zoomed":
+                self.state("normal")
+                self.update_idletasks()
+
+            self.geometry(f"+{novo_x}+{y_atual}")
+
+            if estado == "zoomed":
+                self.after(200, lambda: self.state("zoomed"))
+        except: pass
 
     def ao_fechar(self):
         self.salvar_posicao_janela()
