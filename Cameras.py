@@ -7,7 +7,7 @@ import threading
 import time
 import socket
 import queue
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 
 # Configuração de baixa latência para OpenCV/FFMPEG
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
@@ -88,6 +88,7 @@ class CentralMonitoramento(ctk.CTk):
         # Configurações
         self.arquivo_config = os.path.join(os.path.expanduser("~"), "config_cameras_abi.json")
         self.arquivo_posicao = os.path.join(os.path.expanduser("~"), "posicao_janela_abi.json")
+        self.arquivo_presets = os.path.join(os.path.expanduser("~"), "presets_grid_abi.json")
 
         # Carrega posição e estado salvos (ou inicia maximizado por padrão)
         self.carregar_posicao_janela()
@@ -99,6 +100,7 @@ class CentralMonitoramento(ctk.CTk):
 
         self.ip_selecionado = None
         self.camera_handlers = {}
+        self.presets = self.carregar_presets_do_arquivo()
         self.em_tela_cheia = False
         self.slot_maximized = None
         self.arquivo_grid = os.path.join(os.path.expanduser("~"), "grid_config_abi.json")
@@ -116,17 +118,33 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
 
-        ctk.CTkLabel(self.sidebar, text="CÂMERAS", font=("Roboto", 20, "bold"), text_color=self.ACCENT_RED).pack(pady=(15, 5))
+        # Tabview para organizar Câmeras e Predefinições
+        self.tabview = ctk.CTkTabview(self.sidebar, fg_color="transparent",
+                                      segmented_button_selected_color=self.ACCENT_RED,
+                                      segmented_button_unselected_hover_color=self.ACCENT_WINE)
+        self.tabview.pack(expand=True, fill="both", padx=5, pady=5)
+
+        self.tab_cams = self.tabview.add("Câmeras")
+        self.tab_presets = self.tabview.add("Predefinições")
+
+        # UI de Predefinições
+        self.btn_salvar_preset = ctk.CTkButton(self.tab_presets, text="Salvar Predefinição Atual",
+                                                fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                                command=self.salvar_preset_atual)
+        self.btn_salvar_preset.pack(fill="x", padx=10, pady=10)
+
+        self.scroll_presets = ctk.CTkScrollableFrame(self.tab_presets, fg_color="transparent")
+        self.scroll_presets.pack(expand=True, fill="both", padx=5, pady=5)
 
         # Busca
-        self.frame_busca = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        self.frame_busca = ctk.CTkFrame(self.tab_cams, fg_color="transparent")
         self.frame_busca.pack(fill="x", padx=10, pady=5)
 
         self.entry_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="Filtrar...")
         self.entry_busca.pack(fill="x", expand=True)
         self.entry_busca.bind("<KeyRelease>", lambda e: self.filtrar_lista())
 
-        self.scroll_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
+        self.scroll_frame = ctk.CTkScrollableFrame(self.tab_cams, fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=5, pady=5)
 
         # 2. ÁREA PRINCIPAL (Direita)
@@ -213,6 +231,7 @@ class CentralMonitoramento(ctk.CTk):
         self.selecionar_slot(0)
         self.restaurar_grid()
         self.alternar_todos_streams()
+        self.atualizar_lista_presets_ui()
         self.loop_exibicao()
 
         # Inicia em tela cheia após um pequeno delay para estabilidade
@@ -412,6 +431,79 @@ class CentralMonitoramento(ctk.CTk):
     def ao_fechar(self):
         self.salvar_posicao_janela()
         self.destroy()
+
+    def carregar_presets_do_arquivo(self):
+        if os.path.exists(self.arquivo_presets):
+            try:
+                with open(self.arquivo_presets, "r", encoding='utf-8') as f:
+                    return json.load(f)
+            except: pass
+        return {}
+
+    def salvar_presets_no_arquivo(self):
+        try:
+            with open(self.arquivo_presets, "w", encoding='utf-8') as f:
+                json.dump(self.presets, f, ensure_ascii=False, indent=4)
+        except: pass
+
+    def salvar_preset_atual(self):
+        nome = simpledialog.askstring("Salvar Predefinição", "Digite um nome para esta predefinição:")
+        if nome:
+            self.presets[nome] = list(self.grid_cameras)
+            self.salvar_presets_no_arquivo()
+            self.atualizar_lista_presets_ui()
+
+    def aplicar_preset(self, nome):
+        if nome in self.presets:
+            ips = self.presets[nome]
+            for i, ip in enumerate(ips):
+                if i < 20:
+                    self.atribuir_ip_ao_slot(i, ip)
+            self.selecionar_slot(0)
+
+    def deletar_preset(self, nome):
+        if nome in self.presets:
+            if messagebox.askyesno("Deletar Predefinição", f"Tem certeza que deseja deletar '{nome}'?"):
+                del self.presets[nome]
+                self.salvar_presets_no_arquivo()
+                self.atualizar_lista_presets_ui()
+
+    def renomear_preset(self, nome_antigo):
+        if nome_antigo in self.presets:
+            novo_nome = simpledialog.askstring("Renomear Predefinição", f"Digite o novo nome para '{nome_antigo}':", initialvalue=nome_antigo)
+            if novo_nome and novo_nome != nome_antigo:
+                self.presets[novo_nome] = self.presets.pop(nome_antigo)
+                self.salvar_presets_no_arquivo()
+                self.atualizar_lista_presets_ui()
+
+    def atualizar_lista_presets_ui(self):
+        # Limpa widgets atuais
+        for widget in self.scroll_presets.winfo_children():
+            widget.destroy()
+
+        for nome in sorted(self.presets.keys()):
+            frm = ctk.CTkFrame(self.scroll_presets, height=50, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
+            frm.pack(fill="x", pady=2)
+            frm.pack_propagate(False)
+
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w")
+            lbl.pack(side="left", fill="both", expand=True, padx=10)
+
+            # Bindings de clique para carregar a predefinição
+            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
+            frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
+            lbl.configure(cursor="hand2")
+            frm.configure(cursor="hand2")
+
+            # Botão de deletar
+            btn_del = ctk.CTkButton(frm, text="❌", width=30, fg_color="transparent", hover_color=self.ACCENT_RED,
+                                    command=lambda n=nome: self.deletar_preset(n))
+            btn_del.pack(side="right", padx=5)
+
+            # Botão de renomear
+            btn_ren = ctk.CTkButton(frm, text="✏️", width=30, fg_color="transparent", hover_color=self.GRAY_DARK,
+                                    command=lambda n=nome: self.renomear_preset(n))
+            btn_ren.pack(side="right", padx=2)
 
     def salvar_grid(self):
         try:
