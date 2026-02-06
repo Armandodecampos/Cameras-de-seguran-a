@@ -9,7 +9,7 @@ import socket
 import queue
 import requests
 from requests.auth import HTTPDigestAuth
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 
 # Configuração de baixa latência para OpenCV/FFMPEG
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
@@ -112,8 +112,10 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_config = os.path.join(user_dir, "config_cameras_abi.json")
         self.arquivo_grid = os.path.join(user_dir, "grid_config_abi.json")
         self.arquivo_janela = os.path.join(user_dir, "config_janela_abi.json")
+        self.arquivo_presets = os.path.join(user_dir, "presets_grid_abi.json")
 
         self.carregar_posicao_janela()
+        self.presets = self.carregar_presets()
         self.ips_unicos = self.gerar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.grid_cameras = self.carregar_grid()
@@ -136,17 +138,40 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
 
-        ctk.CTkLabel(self.sidebar, text="CÂMERAS", font=("Roboto", 20, "bold"), text_color=self.ACCENT_RED).pack(pady=(15, 5))
+        ctk.CTkLabel(self.sidebar, text="SISTEMA ABI", font=("Roboto", 22, "bold"), text_color=self.ACCENT_RED).pack(pady=(15, 5))
 
-        self.frame_busca = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        self.frame_busca.pack(fill="x", padx=10, pady=5)
+        self.tabview = ctk.CTkTabview(self.sidebar, fg_color="transparent",
+                                      segmented_button_selected_color=self.ACCENT_RED,
+                                      segmented_button_unselected_hover_color=self.ACCENT_WINE,
+                                      text_color=self.TEXT_P)
+        self.tabview.pack(expand=True, fill="both", padx=5, pady=5)
+        self.tabview.add("Câmeras")
+        self.tabview.add("Predefinições")
+
+        # --- ABA CÂMERAS ---
+        tab_cams = self.tabview.tab("Câmeras")
+        self.frame_busca = ctk.CTkFrame(tab_cams, fg_color="transparent")
+        self.frame_busca.pack(fill="x", padx=5, pady=5)
 
         self.entry_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="Filtrar...")
         self.entry_busca.pack(fill="x", expand=True)
         self.entry_busca.bind("<KeyRelease>", lambda e: self.filtrar_lista())
 
-        self.scroll_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
-        self.scroll_frame.pack(expand=True, fill="both", padx=5, pady=5)
+        self.scroll_frame = ctk.CTkScrollableFrame(tab_cams, fg_color="transparent")
+        self.scroll_frame.pack(expand=True, fill="both", padx=0, pady=5)
+
+        # --- ABA PREDEFINIÇÕES ---
+        tab_presets = self.tabview.tab("Predefinições")
+
+        self.btn_salvar_preset = ctk.CTkButton(tab_presets, text="Salvar Preset Atual",
+                                                fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                                command=self.salvar_preset_atual)
+        self.btn_salvar_preset.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(tab_presets, text="LISTA DE PRESETS", font=("Roboto", 14, "bold"), text_color=self.TEXT_S).pack(pady=5)
+
+        self.scroll_presets = ctk.CTkScrollableFrame(tab_presets, fg_color="transparent")
+        self.scroll_presets.pack(expand=True, fill="both", padx=5, pady=5)
 
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
         self.main_frame.grid(row=0, column=1, sticky="nsew")
@@ -225,6 +250,7 @@ class CentralMonitoramento(ctk.CTk):
         self.alternar_todos_streams()
         
         self.after(200, lambda: self.state("zoomed"))
+        self.atualizar_lista_presets_ui()
         self.loop_exibicao()
 
     # --- LÓGICA PTZ (NOVO) ---
@@ -680,6 +706,83 @@ class CentralMonitoramento(ctk.CTk):
                 widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
                 widget.configure(cursor="hand2")
             self.botoes_referencia[ip] = {'frame': frm, 'lbl_nome': lbl_nome, 'lbl_ip': lbl_ip}
+
+    # --- MÉTODOS DE PRESETS ---
+    def carregar_presets(self):
+        if os.path.exists(self.arquivo_presets):
+            try:
+                with open(self.arquivo_presets, "r", encoding='utf-8') as f:
+                    return json.load(f)
+            except: pass
+        return {}
+
+    def salvar_presets(self):
+        try:
+            with open(self.arquivo_presets, "w", encoding='utf-8') as f:
+                json.dump(self.presets, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Erro ao salvar presets: {e}")
+
+    def salvar_preset_atual(self):
+        nome = simpledialog.askstring("Salvar Preset", "Digite um nome para esta predefinição:")
+        if nome:
+            if nome in self.presets:
+                if not messagebox.askyesno("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?"):
+                    return
+            self.presets[nome] = list(self.grid_cameras)
+            self.salvar_presets()
+            self.atualizar_lista_presets_ui()
+            messagebox.showinfo("Presets", f"Predefinição '{nome}' salva com sucesso!")
+
+    def aplicar_preset(self, nome):
+        preset = self.presets.get(nome)
+        if preset:
+            for i, ip in enumerate(preset):
+                if i < 20:
+                    self.atribuir_ip_ao_slot(i, ip)
+            self.selecionar_slot(self.slot_selecionado)
+            messagebox.showinfo("Presets", f"Predefinição '{nome}' aplicada!")
+
+    def deletar_preset(self, nome):
+        if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
+            if nome in self.presets:
+                del self.presets[nome]
+                self.salvar_presets()
+                self.atualizar_lista_presets_ui()
+
+    def renomear_preset(self, nome_antigo):
+        novo_nome = simpledialog.askstring("Renomear Preset", f"Novo nome para '{nome_antigo}':", initialvalue=nome_antigo)
+        if novo_nome and novo_nome != nome_antigo:
+            if novo_nome in self.presets:
+                messagebox.showerror("Erro", "Já existe um preset com este nome.")
+                return
+            self.presets[novo_nome] = self.presets.pop(nome_antigo)
+            self.salvar_presets()
+            self.atualizar_lista_presets_ui()
+
+    def atualizar_lista_presets_ui(self):
+        # Limpar lista atual
+        for child in self.scroll_presets.winfo_children():
+            child.destroy()
+
+        # Rebuild em ordem alfabética
+        for nome in sorted(self.presets.keys()):
+            frm = ctk.CTkFrame(self.scroll_presets, height=45, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
+            frm.pack(fill="x", pady=2)
+            frm.pack_propagate(False)
+
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13), anchor="w", cursor="hand2")
+            lbl.pack(side="left", fill="both", expand=True, padx=10)
+            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
+
+            # Botões de ação pequenos
+            btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
+            btn_ren.pack(side="right", padx=2)
+
+            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
+                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
+            btn_del.pack(side="right", padx=5)
 
 if __name__ == "__main__":
     app = CentralMonitoramento()
