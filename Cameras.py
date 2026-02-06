@@ -9,7 +9,7 @@ import socket
 import queue
 import requests
 from requests.auth import HTTPDigestAuth
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog as sd
 
 # Configuração de baixa latência para OpenCV/FFMPEG
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
@@ -112,8 +112,10 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_config = os.path.join(user_dir, "config_cameras_abi.json")
         self.arquivo_grid = os.path.join(user_dir, "grid_config_abi.json")
         self.arquivo_janela = os.path.join(user_dir, "config_janela_abi.json")
+        self.arquivo_presets = os.path.join(user_dir, "presets_grid_abi.json")
 
         self.carregar_posicao_janela()
+        self.presets = self.carregar_presets()
         self.ips_unicos = self.gerar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.grid_cameras = self.carregar_grid()
@@ -136,17 +138,30 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
 
-        ctk.CTkLabel(self.sidebar, text="CÂMERAS", font=("Roboto", 20, "bold"), text_color=self.ACCENT_RED).pack(pady=(15, 5))
+        self.tab_sidebar = ctk.CTkTabview(self.sidebar, fg_color="transparent", segmented_button_selected_color=self.ACCENT_RED,
+                                         segmented_button_unselected_hover_color=self.ACCENT_WINE)
+        self.tab_sidebar.pack(expand=True, fill="both", padx=5, pady=5)
+        self.tab_sidebar.add("Câmeras")
+        self.tab_sidebar.add("Predefinições")
 
-        self.frame_busca = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        # Tab Câmeras
+        self.frame_busca = ctk.CTkFrame(self.tab_sidebar.tab("Câmeras"), fg_color="transparent")
         self.frame_busca.pack(fill="x", padx=10, pady=5)
 
         self.entry_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="Filtrar...")
         self.entry_busca.pack(fill="x", expand=True)
         self.entry_busca.bind("<KeyRelease>", lambda e: self.filtrar_lista())
 
-        self.scroll_frame = ctk.CTkScrollableFrame(self.sidebar, fg_color="transparent")
+        self.scroll_frame = ctk.CTkScrollableFrame(self.tab_sidebar.tab("Câmeras"), fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=5, pady=5)
+
+        # Tab Predefinições
+        self.btn_salvar_preset = ctk.CTkButton(self.tab_sidebar.tab("Predefinições"), text="Salvar Grade Atual",
+                                               command=self.salvar_preset_atual, fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE)
+        self.btn_salvar_preset.pack(fill="x", padx=10, pady=10)
+
+        self.scroll_presets = ctk.CTkScrollableFrame(self.tab_sidebar.tab("Predefinições"), fg_color="transparent")
+        self.scroll_presets.pack(expand=True, fill="both", padx=5, pady=5)
 
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
         self.main_frame.grid(row=0, column=1, sticky="nsew")
@@ -223,6 +238,7 @@ class CentralMonitoramento(ctk.CTk):
         self.selecionar_slot(0)
         self.restaurar_grid()
         self.alternar_todos_streams()
+        self.atualizar_lista_presets_ui()
         
         self.after(200, lambda: self.state("zoomed"))
         self.loop_exibicao()
@@ -662,6 +678,73 @@ class CentralMonitoramento(ctk.CTk):
                 with open(self.arquivo_config, "r", encoding='utf-8') as f: return json.load(f)
             except: pass
         return {}
+
+    def carregar_presets(self):
+        if os.path.exists(self.arquivo_presets):
+            try:
+                with open(self.arquivo_presets, "r", encoding='utf-8') as f:
+                    return json.load(f)
+            except: pass
+        return {}
+
+    def salvar_preset_atual(self):
+        nome = sd.askstring("Salvar Predefinição", "Digite o nome para esta predefinição:")
+        if nome:
+            self.presets[nome] = list(self.grid_cameras)
+            self.persistir_presets()
+            self.atualizar_lista_presets_ui()
+
+    def aplicar_preset(self, nome):
+        ips = self.presets.get(nome)
+        if ips:
+            for i, ip in enumerate(ips):
+                if i < 20:
+                    self.atribuir_ip_ao_slot(i, ip)
+            messagebox.showinfo("Sucesso", f"Predefinição '{nome}' aplicada!")
+
+    def deletar_preset(self, nome):
+        if messagebox.askyesno("Confirmar", f"Deseja deletar a predefinição '{nome}'?"):
+            if nome in self.presets:
+                del self.presets[nome]
+                self.persistir_presets()
+                self.atualizar_lista_presets_ui()
+
+    def renomear_preset(self, nome_antigo):
+        novo_nome = sd.askstring("Renomear", f"Novo nome para '{nome_antigo}':", initialvalue=nome_antigo)
+        if novo_nome and novo_nome != nome_antigo:
+            if novo_nome in self.presets:
+                messagebox.showerror("Erro", "Já existe uma predefinição com esse nome.")
+                return
+            self.presets[novo_nome] = self.presets.pop(nome_antigo)
+            self.persistir_presets()
+            self.atualizar_lista_presets_ui()
+
+    def persistir_presets(self):
+        try:
+            with open(self.arquivo_presets, "w", encoding='utf-8') as f:
+                json.dump(self.presets, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao salvar arquivo: {e}")
+
+    def atualizar_lista_presets_ui(self):
+        for widget in self.scroll_presets.winfo_children():
+            widget.destroy()
+
+        for nome in sorted(self.presets.keys()):
+            frm = ctk.CTkFrame(self.scroll_presets, fg_color="transparent")
+            frm.pack(fill="x", pady=2)
+
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 12, "bold"), cursor="hand2", anchor="w")
+            lbl.pack(side="left", padx=10, fill="x", expand=True)
+            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
+
+            btn_ren = ctk.CTkButton(frm, text="R", width=30, fg_color=self.GRAY_DARK,
+                                   hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
+            btn_ren.pack(side="right", padx=2)
+
+            btn_del = ctk.CTkButton(frm, text="X", width=30, fg_color=self.ACCENT_RED,
+                                   hover_color=self.ACCENT_WINE, command=lambda n=nome: self.deletar_preset(n))
+            btn_del.pack(side="right", padx=5)
 
     def obter_ips_ordenados(self):
         def chave_ordenacao(ip): return self.dados_cameras.get(ip, f"IP {ip}").lower()
