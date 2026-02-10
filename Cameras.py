@@ -734,14 +734,54 @@ class CentralMonitoramento(ctk.CTk):
             self.atualizar_lista_presets_ui()
             messagebox.showinfo("Presets", f"Predefinição '{nome}' salva com sucesso!")
 
+    def sobrescrever_preset(self, nome):
+        if messagebox.askyesno("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?"):
+            self.presets[nome] = list(self.grid_cameras)
+            self.salvar_presets()
+            messagebox.showinfo("Presets", f"Predefinição '{nome}' atualizada!")
+
     def aplicar_preset(self, nome):
         preset = self.presets.get(nome)
-        if preset:
-            for i, ip in enumerate(preset):
-                if i < 20:
-                    self.atribuir_ip_ao_slot(i, ip)
-            self.selecionar_slot(self.slot_selecionado)
-            messagebox.showinfo("Presets", f"Predefinição '{nome}' aplicada!")
+        if not preset: return
+
+        # 1. Garantir que o preset tenha exatamente 20 elementos
+        nova_config = list(preset)[:20]
+        while len(nova_config) < 20:
+            nova_config.append("0.0.0.0")
+
+        # 2. Identificar IPs que sairão do grid para limpar recursos
+        ips_antigos = set(self.grid_cameras)
+        ips_novos = set(nova_config)
+        for ip in ips_antigos:
+            if ip != "0.0.0.0" and ip not in ips_novos:
+                if ip in self.camera_handlers:
+                    handler = self.camera_handlers[ip]
+                    if handler != "CONECTANDO" and hasattr(handler, 'parar'):
+                        handler.parar()
+                    del self.camera_handlers[ip]
+
+        # 3. Atualizar o grid lógico e salvar
+        self.grid_cameras = nova_config
+        self.salvar_grid()
+
+        # 4. Sincronizar UI e iniciar novas conexões
+        for i, ip in enumerate(self.grid_cameras):
+            try:
+                self.slot_labels[i].configure(image="")
+                if ip == "0.0.0.0":
+                    self.slot_labels[i].configure(text=f"Espaço {i+1}")
+                else:
+                    self.slot_labels[i].configure(text=f"CONECTANDO\n{ip}")
+                self.slot_labels[i].image = None
+            except: pass
+
+            if ip != "0.0.0.0":
+                if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+                self.iniciar_conexao_assincrona(ip, 102)
+
+        self.selecionar_slot(self.slot_selecionado)
+        self.update_idletasks()
+        messagebox.showinfo("Presets", f"Predefinição '{nome}' aplicada!")
 
     def deletar_preset(self, nome):
         if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
@@ -775,7 +815,11 @@ class CentralMonitoramento(ctk.CTk):
             lbl.pack(side="left", fill="both", expand=True, padx=10)
             lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
 
-            # Botões de ação pequenos
+            # Botões de ação pequenos: S (Sobrescrever), R (Renomear), X (Deletar)
+            btn_sob = ctk.CTkButton(frm, text="S", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.sobrescrever_preset(n))
+            btn_sob.pack(side="right", padx=2)
+
             btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
                                      hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
             btn_ren.pack(side="right", padx=2)
