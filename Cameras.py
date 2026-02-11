@@ -11,9 +11,8 @@ import requests
 from requests.auth import HTTPDigestAuth
 from tkinter import messagebox, simpledialog
 
-# Configuração de baixa latência e estabilidade para OpenCV/FFMPEG
-# tcp: estável, video: pula áudio, stimeout: timeout 5s, analyze/probe: detecta headers PPS melhor
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;allowed_media_types;video;analyzeduration;100000;probesize;100000;stimeout;5000000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
+# Configuração de baixa latência para OpenCV/FFMPEG
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
@@ -44,47 +43,13 @@ class CameraHandler:
             return False
 
     def loop_leitura(self):
-        falhas_consecutivas = 0
-        while self.rodando:
-            if not self.cap or not self.cap.isOpened():
-                self.conectado = False
-                time.sleep(1) # Recuperação mais rápida
-                try:
-                    self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
-                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                    if self.cap.isOpened():
-                        self.conectado = True
-                        falhas_consecutivas = 0
-                    else:
-                        continue
-                except:
-                    continue
-
+        while self.rodando and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
-                falhas_consecutivas = 0
-                self.conectado = True
-
-                # Pre-processamento: Texto, Conversão e PIL no thread da câmera (Otimização Máxima)
-                # Adiciona IP no frame original antes de converter (mais rápido que no loop)
-                h, w = frame.shape[:2]
-                pos = (10, h - 20)
-                cv2.putText(frame, self.url.split('@')[-1].split(':')[0], pos, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,0), 3)
-                cv2.putText(frame, self.url.split('@')[-1].split(':')[0], pos, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2)
-
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                pil_img = Image.fromarray(rgb_frame)
-
                 with self.lock:
-                    self.frame_atual = pil_img
+                    self.frame_atual = frame
                     self.frame_novo = True
             else:
-                falhas_consecutivas += 1
-                # Se falhar muitas vezes seguidas (aprox 2 segundos), tenta reabrir a captura
-                if falhas_consecutivas > 100:
-                    self.cap.release()
-                    self.conectado = False
-                    falhas_consecutivas = 0
                 time.sleep(0.01)
 
         if self.cap:
@@ -163,7 +128,6 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_selecionado = 0
         self.press_data = None
         self.fila_conexoes = queue.Queue()
-        self.fila_pendente_conexoes = queue.Queue()
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None 
         
@@ -306,10 +270,6 @@ class CentralMonitoramento(ctk.CTk):
         self.restaurar_grid()
         self.alternar_todos_streams()
         self.atualizar_lista_presets_ui()
-
-        # Inicia worker para conexões escalonadas
-        threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
-
         self.loop_exibicao()
 
     # --- LÓGICA DO MENU EXPANSÍVEL ---
@@ -658,72 +618,39 @@ class CentralMonitoramento(ctk.CTk):
         if len(nome) > max_chars: return nome[:max_chars-3] + "..."
         return nome
 
-    def _processar_fila_conexoes_pendentes(self):
-        """Worker que inicia conexões uma a uma para evitar erro 500 do servidor"""
-        while True:
-            try:
-                if not self.fila_pendente_conexoes.empty():
-                    ip, canal = self.fila_pendente_conexoes.get()
-                    self._iniciar_conexao_real(ip, canal)
-                    time.sleep(0.4) # Delay otimizado para carregamento mais rápido
-                else:
-                    time.sleep(0.1)
-            except:
-                time.sleep(1)
-
     def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip or ip == "0.0.0.0": return
         agora = time.time()
         if ip in self.cooldown_conexoes:
-            if agora - self.cooldown_conexoes[ip] < 3: return
+            if agora - self.cooldown_conexoes[ip] < 10: return
         if ip in self.camera_handlers:
             handler = self.camera_handlers[ip]
             if handler == "CONECTANDO": return
             if hasattr(handler, 'rodando') and handler.rodando: return
             del self.camera_handlers[ip]
         self.camera_handlers[ip] = "CONECTANDO"
-        self.fila_pendente_conexoes.put((ip, canal))
-
-    def _iniciar_conexao_real(self, ip, canal):
         threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
     def _thread_conectar(self, ip, canal):
-        tentativas = 3
-        nova_cam = None
-        sucesso = False
-
-        for i in range(tentativas):
-            try:
-                url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
-                nova_cam = CameraHandler(url, canal)
-                sucesso = nova_cam.iniciar()
-                if sucesso:
-                    break
-            except Exception as e:
-                print(f"Tentativa {i+1} falhou para {ip}: {e}")
-
-            if not sucesso:
-                time.sleep(0.5) # Delay otimizado para feedback mais rápido
-
-        self.fila_conexoes.put((sucesso, nova_cam, ip))
+        try:
+            url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
+            nova_cam = CameraHandler(url, canal)
+            sucesso = nova_cam.iniciar()
+            self.fila_conexoes.put((sucesso, nova_cam, ip))
+        except Exception as e:
+            print(f"Erro crítico na thread de conexão ({ip}): {e}")
+            self.fila_conexoes.put((False, None, ip))
 
     def _pos_conexao(self, sucesso, camera_obj, ip):
         if sucesso:
             self.camera_handlers[ip] = camera_obj
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-            # Sucesso: Garantir que o fundo volte ao normal
-            for i, grid_ip in enumerate(self.grid_cameras):
-                if grid_ip == ip:
-                    self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
-                    self.slot_labels[i].configure(fg_color="transparent")
         else:
             if ip in self.camera_handlers: del self.camera_handlers[ip]
             self.cooldown_conexoes[ip] = time.time()
             for i, grid_ip in enumerate(self.grid_cameras):
                 if grid_ip == ip:
-                    try:
-                        self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED)
-                        self.slot_frames[i].configure(fg_color=self.ACCENT_RED)
+                    try: self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
                     except: pass
         self.atualizar_botoes_controle()
 
@@ -747,16 +674,11 @@ class CentralMonitoramento(ctk.CTk):
 
                 # Gerenciamento de erro
                 if ip in self.cooldown_conexoes:
-                    if agora - self.cooldown_conexoes[ip] < 3:
+                    if agora - self.cooldown_conexoes[ip] < 10:
                         try:
-                            self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED)
-                            self.slot_frames[i].configure(fg_color=self.ACCENT_RED)
+                            self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
                         except: pass
                         continue
-                    else:
-                        # Cooldown expirou, resetar para tentar novamente
-                        self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
-                        self.slot_labels[i].configure(fg_color="transparent")
 
                 # Busca ou obtém frame do handler
                 if ip not in raw_frames_cache:
@@ -781,12 +703,20 @@ class CentralMonitoramento(ctk.CTk):
                         if cache_key in processed_images_cache:
                             ctk_img = processed_images_cache[cache_key]
                         else:
-                            # Redimensionamento rápido de imagem PIL (Otimizado)
-                            # Se for maximizado, usa qualidade melhor
-                            resample_mode = Image.BILINEAR if self.slot_maximized is not None else Image.NEAREST
-                            img_resized = frame.resize((w, h), resample=resample_mode)
+                            # Redimensionamento rápido de imagem OpenCV
+                            interp = cv2.INTER_LINEAR if self.slot_maximized is not None else cv2.INTER_NEAREST
+                            frame_resized = cv2.resize(frame, (w, h), interpolation=interp)
 
-                            ctk_img = ctk.CTkImage(light_image=img_resized, dark_image=img_resized, size=(w, h))
+                            # Adiciona IP no frame
+                            pos = (10, h - 10)
+                            cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                            cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
+                            # Converte para PIL
+                            rgb_frame = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+                            img_pil = Image.fromarray(rgb_frame)
+
+                            ctk_img = ctk.CTkImage(light_image=img_pil, dark_image=img_pil, size=(w, h))
                             processed_images_cache[cache_key] = ctk_img
 
                         try:
