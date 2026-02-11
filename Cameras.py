@@ -11,8 +11,9 @@ import requests
 from requests.auth import HTTPDigestAuth
 from tkinter import messagebox, simpledialog
 
-# Configuração de baixa latência para OpenCV/FFMPEG - Trocado UDP por TCP para maior estabilidade
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
+# Configuração de baixa latência e estabilidade para OpenCV/FFMPEG
+# tcp: estável, video: pula áudio, stimeout: timeout 5s, analyze/probe: detecta headers PPS melhor
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;allowed_media_types;video;analyzeduration;100000;probesize;100000;stimeout;5000000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
@@ -47,7 +48,7 @@ class CameraHandler:
         while self.rodando:
             if not self.cap or not self.cap.isOpened():
                 self.conectado = False
-                time.sleep(2)
+                time.sleep(1) # Recuperação mais rápida
                 try:
                     self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
                     self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -664,7 +665,7 @@ class CentralMonitoramento(ctk.CTk):
                 if not self.fila_pendente_conexoes.empty():
                     ip, canal = self.fila_pendente_conexoes.get()
                     self._iniciar_conexao_real(ip, canal)
-                    time.sleep(0.8) # Delay aumentado para evitar erro 500
+                    time.sleep(0.4) # Delay otimizado para carregamento mais rápido
                 else:
                     time.sleep(0.1)
             except:
@@ -702,7 +703,7 @@ class CentralMonitoramento(ctk.CTk):
                 print(f"Tentativa {i+1} falhou para {ip}: {e}")
 
             if not sucesso:
-                time.sleep(1.5) # Delay aumentado para recuperação do servidor
+                time.sleep(0.5) # Delay otimizado para feedback mais rápido
 
         self.fila_conexoes.put((sucesso, nova_cam, ip))
 
