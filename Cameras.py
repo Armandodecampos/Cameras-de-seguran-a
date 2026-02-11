@@ -11,20 +11,24 @@ import requests
 from requests.auth import HTTPDigestAuth
 from tkinter import messagebox, simpledialog
 
-# Configuração de baixa latência para OpenCV/FFMPEG
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
+# Configuração de baixa latência e estabilidade para OpenCV/FFMPEG
+# allowed_media_types;video: pula áudio, stimeout: timeout 5s
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;allowed_media_types;video;analyzeduration;50000;probesize;50000;stimeout;5000000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
+cv2.setNumThreads(0)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
-    def __init__(self, url, canal=101):
+    def __init__(self, url, canal=101, ip=""):
         self.url = url
         self.canal = canal
+        self.ip = ip
         self.cap = None
         self.rodando = False
         self.frame_atual = None
         self.frame_novo = False
         self.lock = threading.Lock()
         self.conectado = False
+        self.tamanho_alvo = (640, 360) # Default
 
     def iniciar(self):
         try:
@@ -46,9 +50,25 @@ class CameraHandler:
         while self.rodando and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
-                with self.lock:
-                    self.frame_atual = frame
-                    self.frame_novo = True
+                try:
+                    # Processamento pesado fora da UI thread
+                    w, h = self.tamanho_alvo
+                    frame_res = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
+
+                    # Desenha IP
+                    pos = (10, h - 10)
+                    cv2.putText(frame_res, self.ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                    cv2.putText(frame_res, self.ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
+                    # Converte para PIL
+                    rgb = cv2.cvtColor(frame_res, cv2.COLOR_BGR2RGB)
+                    pil_img = Image.fromarray(rgb)
+
+                    with self.lock:
+                        self.frame_atual = pil_img
+                        self.frame_novo = True
+                except:
+                    continue
             else:
                 time.sleep(0.01)
 
@@ -128,6 +148,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_selecionado = 0
         self.press_data = None
         self.fila_conexoes = queue.Queue()
+        self.fila_pendente_conexoes = queue.Queue()
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None 
         
@@ -270,6 +291,10 @@ class CentralMonitoramento(ctk.CTk):
         self.restaurar_grid()
         self.alternar_todos_streams()
         self.atualizar_lista_presets_ui()
+
+        # Inicia worker para conexões gerenciadas
+        threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
+
         self.loop_exibicao()
 
     # --- LÓGICA DO MENU EXPANSÍVEL ---
@@ -618,6 +643,19 @@ class CentralMonitoramento(ctk.CTk):
         if len(nome) > max_chars: return nome[:max_chars-3] + "..."
         return nome
 
+    def _processar_fila_conexoes_pendentes(self):
+        """Worker que inicia conexões uma a uma para não travar o sistema"""
+        while True:
+            try:
+                if not self.fila_pendente_conexoes.empty():
+                    ip, canal = self.fila_pendente_conexoes.get()
+                    threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
+                    time.sleep(0.2) # Intervalo entre tentativas
+                else:
+                    time.sleep(0.1)
+            except:
+                time.sleep(1)
+
     def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip or ip == "0.0.0.0": return
         agora = time.time()
@@ -629,12 +667,12 @@ class CentralMonitoramento(ctk.CTk):
             if hasattr(handler, 'rodando') and handler.rodando: return
             del self.camera_handlers[ip]
         self.camera_handlers[ip] = "CONECTANDO"
-        threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
+        self.fila_pendente_conexoes.put((ip, canal))
 
     def _thread_conectar(self, ip, canal):
         try:
             url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
-            nova_cam = CameraHandler(url, canal)
+            nova_cam = CameraHandler(url, canal, ip)
             sucesso = nova_cam.iniciar()
             self.fila_conexoes.put((sucesso, nova_cam, ip))
         except Exception as e:
@@ -665,8 +703,7 @@ class CentralMonitoramento(ctk.CTk):
             agora = time.time()
             indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
 
-            raw_frames_cache = {}  # ip -> frame original
-            processed_images_cache = {}  # (ip, w, h) -> ctk_img
+            images_cache = {}  # (ip, w, h) -> ctk_img
 
             for i in indices:
                 ip = self.grid_cameras[i]
@@ -680,58 +717,47 @@ class CentralMonitoramento(ctk.CTk):
                         except: pass
                         continue
 
-                # Busca ou obtém frame do handler
-                if ip not in raw_frames_cache:
-                    handler = self.camera_handlers.get(ip)
-                    if handler is None:
-                        self.iniciar_conexao_assincrona(ip, 102)
-                        raw_frames_cache[ip] = None
-                        continue
-                    if handler == "CONECTANDO":
-                        raw_frames_cache[ip] = None
-                        continue
-                    raw_frames_cache[ip] = handler.pegar_frame()
+                handler = self.camera_handlers.get(ip)
+                if handler is None:
+                    self.iniciar_conexao_assincrona(ip, 102)
+                    continue
+                if handler == "CONECTANDO":
+                    continue
 
-                frame = raw_frames_cache[ip]
-                if frame is not None:
-                    try:
-                        w = self.slot_frames[i].winfo_width()
-                        h = self.slot_frames[i].winfo_height()
-                        w = max(10, w - 6); h = max(10, h - 6)
+                try:
+                    w = self.slot_frames[i].winfo_width()
+                    h = self.slot_frames[i].winfo_height()
+                    w = max(10, w - 6); h = max(10, h - 6)
 
-                        cache_key = (ip, w, h)
-                        if cache_key in processed_images_cache:
-                            ctk_img = processed_images_cache[cache_key]
-                        else:
-                            # Redimensionamento rápido de imagem OpenCV
-                            interp = cv2.INTER_LINEAR if self.slot_maximized is not None else cv2.INTER_NEAREST
-                            frame_resized = cv2.resize(frame, (w, h), interpolation=interp)
+                    # Atualiza tamanho alvo no handler para o próximo frame
+                    handler.tamanho_alvo = (w, h)
 
-                            # Adiciona IP no frame
-                            pos = (10, h - 10)
-                            cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                            cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-
-                            # Converte para PIL
-                            rgb_frame = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
-                            img_pil = Image.fromarray(rgb_frame)
-
-                            ctk_img = ctk.CTkImage(light_image=img_pil, dark_image=img_pil, size=(w, h))
-                            processed_images_cache[cache_key] = ctk_img
-
-                        try:
-                            # Se está mostrando vídeo, garante fundo transparente
-                            self.slot_labels[i].configure(image=ctk_img, text="", fg_color="transparent")
-                            self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
-                        except: pass
-                        self.slot_labels[i].image = ctk_img
+                    cache_key = (ip, w, h)
+                    if cache_key in images_cache:
+                        ctk_img = images_cache[cache_key]
+                    else:
+                        pil_img = handler.pegar_frame()
+                        if pil_img is None: continue
                         
-                        # Garante que o botão overlay (se existir neste slot) fique por cima do vídeo no canto inferior direito
-                        if self.btn_overlay_cam and self.slot_selecionado == i:
-                             self.btn_overlay_cam.lift()
-                             self.btn_overlay_cam.place(relx=1.0, rely=1.0, x=-5, y=-5, anchor="se")
-                             
+                        # Se o tamanho não bater (primeiros frames), redimensiona rápido aqui
+                        if pil_img.size != (w, h):
+                            pil_img = pil_img.resize((w, h), Image.NEAREST)
+
+                        ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
+                        images_cache[cache_key] = ctk_img
+
+                    try:
+                        # Se está mostrando vídeo, garante fundo transparente
+                        self.slot_labels[i].configure(image=ctk_img, text="", fg_color="transparent")
+                        self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
                     except: pass
+                    self.slot_labels[i].image = ctk_img
+
+                    # Garante que o botão overlay (se existir neste slot) fique por cima do vídeo no canto inferior direito
+                    if self.btn_overlay_cam and self.slot_selecionado == i:
+                            self.btn_overlay_cam.lift()
+                            self.btn_overlay_cam.place(relx=1.0, rely=1.0, x=-5, y=-5, anchor="se")
+                except: pass
         except Exception as e: print(f"Erro no loop de exibição: {e}")
         finally: self.after(50, self.loop_exibicao)
 
@@ -837,18 +863,17 @@ class CentralMonitoramento(ctk.CTk):
         preset = self.presets.get(nome)
         if not preset: return
 
-        # 1. Identifica câmeras que não estarão no novo preset e as para imediatamente
+        # 1. Identifica e para câmeras removidas
         ips_novos = set(preset)
         for ip in list(self.camera_handlers.keys()):
             if ip not in ips_novos and ip != "0.0.0.0":
-                if ip in self.camera_handlers:
-                    try:
-                        handler = self.camera_handlers[ip]
-                        if hasattr(handler, 'parar'): handler.parar()
-                    except: pass
+                try:
+                    handler = self.camera_handlers[ip]
+                    if hasattr(handler, 'parar'): handler.parar()
                     del self.camera_handlers[ip]
+                except: pass
 
-        # 2. Limpa visualmente todos os espaços antes de carregar o novo
+        # 2. Limpa visualmente todos os espaços
         for i in range(20):
             self.grid_cameras[i] = "0.0.0.0"
             self.slot_labels[i].configure(image=None, text=f"Espaço {i+1}")
@@ -856,13 +881,18 @@ class CentralMonitoramento(ctk.CTk):
             self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
             self.slot_labels[i].configure(fg_color="transparent")
 
-        # 3. Aplica o novo preset
-        for i, ip in enumerate(preset):
-            if i < 20:
-                self.atribuir_ip_ao_slot(i, ip)
+        # 3. Inicia carregamento escalonado para não travar a UI
+        def carregar_escalonado(lista_ips, idx=0):
+            if idx < len(lista_ips) and idx < 20:
+                ip = lista_ips[idx]
+                self.atribuir_ip_ao_slot(idx, ip)
+                # Próxima câmera em 100ms
+                self.after(100, lambda: carregar_escalonado(lista_ips, idx + 1))
+            else:
+                self.selecionar_slot(self.slot_selecionado)
+                messagebox.showinfo("Presets", f"Predefinição '{nome}' carregada!")
 
-        self.selecionar_slot(self.slot_selecionado)
-        messagebox.showinfo("Presets", f"Predefinição '{nome}' aplicada!")
+        carregar_escalonado(list(preset))
 
     def deletar_preset(self, nome):
         if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
