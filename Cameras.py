@@ -811,11 +811,11 @@ class CentralMonitoramento(ctk.CTk):
         for child in self.scroll_presets.winfo_children():
             child.destroy()
         for nome in sorted(self.presets.keys()):
-            frm = ctk.CTkFrame(self.scroll_presets, height=45, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
-            frm.pack(fill="x", pady=2)
+            frm = ctk.CTkFrame(self.scroll_presets, height=50, fg_color=self.BG_SIDEBAR, border_width=1, border_color=self.GRAY_DARK)
+            frm.pack(fill="x", pady=2, padx=2)
             frm.pack_propagate(False)
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13), anchor="w", cursor="hand2")
-            lbl.pack(side="left", fill="both", expand=True, padx=10)
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w", cursor="hand2")
+            lbl.pack(side="left", fill="x", padx=10)
             lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
                                      hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
