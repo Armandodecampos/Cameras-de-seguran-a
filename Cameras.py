@@ -82,11 +82,11 @@ class CentralMonitoramento(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Sistema de Monitoramento ABI - Full Control V4 + PTZ")
+        self.title("Sistema de Monitoramento ABI - Full Control V5 + PTZ")
         self.geometry("1200x800")
         ctk.set_appearance_mode("Dark")
 
-        # Credenciais para PTZ (Baseado na sua URL RTSP)
+        # Credenciais para PTZ
         self.user_ptz = "admin"
         self.pass_ptz = "1357gov@"
 
@@ -95,13 +95,12 @@ class CentralMonitoramento(ctk.CTk):
         # Binds de Teclado
         self.bind("<Escape>", lambda event: self.sair_tela_cheia())
         
-        # Binds para PTZ (Setas do teclado)
+        # Binds para PTZ
         self.bind("<KeyPress-Up>", lambda e: self.comando_ptz("UP"))
         self.bind("<KeyPress-Down>", lambda e: self.comando_ptz("DOWN"))
         self.bind("<KeyPress-Left>", lambda e: self.comando_ptz("LEFT"))
         self.bind("<KeyPress-Right>", lambda e: self.comando_ptz("RIGHT"))
         
-        # Parar movimento ao soltar a tecla
         self.bind("<KeyRelease-Up>", lambda e: self.comando_ptz("STOP"))
         self.bind("<KeyRelease-Down>", lambda e: self.comando_ptz("STOP"))
         self.bind("<KeyRelease-Left>", lambda e: self.comando_ptz("STOP"))
@@ -129,16 +128,23 @@ class CentralMonitoramento(ctk.CTk):
         self.press_data = None
         self.fila_conexoes = queue.Queue()
         self.cooldown_conexoes = {}
-        self.tecla_pressionada = None # Trava para não repetir comandos HTTP
+        self.tecla_pressionada = None
+        
+        # Controle da Sidebar
+        self.sidebar_visible = True
 
-        # --- LAYOUT (Mesma estrutura original) ---
-        self.grid_columnconfigure(1, weight=1)
+        # --- LAYOUT ATUALIZADO ---
+        # Coluna 0: Sidebar
+        # Coluna 1: Botão Toggle (Fino)
+        # Coluna 2: Main Content (Câmeras)
+        self.grid_columnconfigure(0, weight=0) # Sidebar fixa
+        self.grid_columnconfigure(1, weight=0) # Botão toggle fixo
+        self.grid_columnconfigure(2, weight=1) # Main expande
         self.grid_rowconfigure(0, weight=1)
 
+        # 1. Sidebar (Coluna 0)
         self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-
-        ctk.CTkLabel(self.sidebar, text="SISTEMA ABI", font=("Roboto", 22, "bold"), text_color=self.ACCENT_RED).pack(pady=(15, 5))
 
         self.tabview = ctk.CTkTabview(self.sidebar, fg_color="transparent",
                                       segmented_button_selected_color=self.ACCENT_RED,
@@ -148,7 +154,7 @@ class CentralMonitoramento(ctk.CTk):
         self.tabview.add("Câmeras")
         self.tabview.add("Predefinições")
 
-        # --- ABA CÂMERAS ---
+        # Conteúdo da Sidebar (Câmeras)
         tab_cams = self.tabview.tab("Câmeras")
         self.frame_busca = ctk.CTkFrame(tab_cams, fg_color="transparent")
         self.frame_busca.pack(fill="x", padx=5, pady=5)
@@ -160,27 +166,39 @@ class CentralMonitoramento(ctk.CTk):
         self.scroll_frame = ctk.CTkScrollableFrame(tab_cams, fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=0, pady=5)
 
-        # --- ABA PREDEFINIÇÕES ---
+        # Conteúdo da Sidebar (Presets)
         tab_presets = self.tabview.tab("Predefinições")
-
-        self.btn_salvar_preset = ctk.CTkButton(tab_presets, text="Salvar Preset Atual",
+        self.btn_salvar_preset = ctk.CTkButton(tab_presets, text="Salvar Predefinição Atual",
                                                 fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
                                                 command=self.salvar_preset_atual)
         self.btn_salvar_preset.pack(fill="x", padx=10, pady=10)
 
-        ctk.CTkLabel(tab_presets, text="LISTA DE PRESETS", font=("Roboto", 14, "bold"), text_color=self.TEXT_S).pack(pady=5)
-
+        ctk.CTkLabel(tab_presets, text="LISTA DE PREDEFINIÇÕES", font=("Roboto", 14, "bold"), text_color=self.TEXT_S).pack(pady=5)
         self.scroll_presets = ctk.CTkScrollableFrame(tab_presets, fg_color="transparent")
         self.scroll_presets.pack(expand=True, fill="both", padx=5, pady=5)
 
-        self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
-        self.main_frame.grid(row=0, column=1, sticky="nsew")
+        # 2. Botão Toggle Sidebar (Coluna 1)
+        self.btn_toggle_sidebar = ctk.CTkButton(
+            self, 
+            text="<", 
+            width=20, 
+            corner_radius=0,
+            fg_color=self.BG_PANEL, 
+            hover_color=self.ACCENT_WINE,
+            command=self.toggle_sidebar
+        )
+        self.btn_toggle_sidebar.grid(row=0, column=1, sticky="ns", padx=0, pady=0)
 
-        self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color=self.BG_PANEL, height=50)
-        self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
+        # 3. Main Frame (Coluna 2)
+        self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
+        self.main_frame.grid(row=0, column=2, sticky="nsew")
+
+        # Painel Topo
+        self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color=self.BG_PANEL, height=40)
+        self.painel_topo.pack(side="top", fill="x", padx=0, pady=0)
 
         self.container_info_topo = ctk.CTkFrame(self.painel_topo, fg_color="transparent")
-        self.container_info_topo.pack(side="left", padx=10, pady=5)
+        self.container_info_topo.pack(side="left", padx=10, pady=2)
 
         self.lbl_nome_topo = ctk.CTkLabel(self.container_info_topo, text="Nenhuma câmera selecionada",
                                           font=("Roboto", 15, "bold"), text_color=self.ACCENT_RED)
@@ -190,11 +208,7 @@ class CentralMonitoramento(ctk.CTk):
                                         font=("Roboto", 13), text_color=self.TEXT_S)
         self.lbl_ip_topo.pack(side="left", padx=(5, 0))
 
-        self.btn_fullscreen = ctk.CTkButton(self.painel_topo, text="Tela Cheia", command=self.entrar_tela_cheia,
-                                            fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED, width=120)
-        self.btn_fullscreen.pack(side="right", padx=5)
-
-        self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Limpar", command=self.limpar_slot_atual,
+        self.btn_limpar_slot = ctk.CTkButton(self.painel_topo, text="Remover", command=self.limpar_slot_atual,
                                              fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE, width=120)
         self.btn_limpar_slot.pack(side="right", padx=5)
 
@@ -204,21 +218,18 @@ class CentralMonitoramento(ctk.CTk):
 
         self.entry_nome = ctk.CTkEntry(self.painel_topo, width=300, placeholder_text="Nome da câmera...")
 
-        self.painel_base = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
+        # --- REMOVIDO self.painel_base PARA TIRAR O ESPAÇO BRANCO ---
+        # O espaço em branco inferior foi eliminado removendo o painel vazio que ficava aqui.
 
-        # Aviso de PTZ no rodapé para o usuário saber que funciona
-        self.lbl_ptz_hint = ctk.CTkLabel(self.painel_base, text="Use as setas do teclado para mover a câmera selecionada", 
-                                         font=("Roboto", 11), text_color=self.TEXT_S)
-        self.lbl_ptz_hint.pack(side="bottom")
-
+        # Grid Frame (Câmeras)
+        # Agora configurado para expandir totalmente na vertical e horizontal
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
-        self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10))
+        self.grid_frame.pack(side="top", expand=True, fill="both", padx=0, pady=0)
 
         for i in range(4): self.grid_frame.grid_rowconfigure(i, weight=1)
         for i in range(5): self.grid_frame.grid_columnconfigure(i, weight=1)
 
-        # Botão Aumentar/Diminuir sobreposto à câmera
+        # Botão Aumentar/Diminuir sobreposto
         self.btn_expandir = ctk.CTkButton(self.grid_frame, text="Aumentar", width=100, height=35,
                                            fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
                                            command=self.toggle_grid_layout)
@@ -254,20 +265,30 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_presets_ui()
         self.loop_exibicao()
 
-    # --- LÓGICA PTZ (NOVO) ---
+    # --- LÓGICA DO TOGGLE DA SIDEBAR ---
+    def toggle_sidebar(self):
+        if self.sidebar_visible:
+            # Esconder
+            self.sidebar.grid_forget()
+            self.btn_toggle_sidebar.configure(text=">") # Seta para direita
+            self.sidebar_visible = False
+        else:
+            # Mostrar
+            self.sidebar.grid(row=0, column=0, sticky="nsew")
+            self.btn_toggle_sidebar.configure(text="<") # Seta para esquerda
+            self.sidebar_visible = True
+
+    # --- LÓGICA PTZ ---
     def comando_ptz(self, direcao):
-        """Envia comandos PTZ para a câmera selecionada usando ISAPI Hikvision."""
         ip = self.ip_selecionado
         if not ip or ip == "0.0.0.0": return
 
-        # Evitar envio repetitivo se a tecla for segurada (o SO repete o evento KeyPress)
         if direcao != "STOP":
             if self.tecla_pressionada == direcao: return
             self.tecla_pressionada = direcao
         else:
             self.tecla_pressionada = None
 
-        # Mapeamento de direções para valores XML do ISAPI
         mapa = {
             "UP": {"pan": 0, "tilt": 100},
             "DOWN": {"pan": 0, "tilt": -100},
@@ -277,14 +298,12 @@ class CentralMonitoramento(ctk.CTk):
         }
 
         valores = mapa.get(direcao)
-        # XML de comando para o endpoint ptz/continuous
         xml_data = f"""<?xml version="1.0" encoding="UTF-8"?>
         <PTZData xmlns="http://www.isapi.org/ver20/XMLSchema">
             <pan>{valores['pan']}</pan>
             <tilt>{valores['tilt']}</tilt>
         </PTZData>"""
 
-        # Thread separada para não travar a interface com a requisição HTTP
         threading.Thread(target=self._enviar_request_ptz, args=(ip, xml_data), daemon=True).start()
 
     def _enviar_request_ptz(self, ip, xml):
@@ -299,16 +318,24 @@ class CentralMonitoramento(ctk.CTk):
         except Exception as e:
             print(f"Erro PTZ {ip}: {e}")
 
-    # --- MÉTODOS ORIGINAIS (COM AJUSTES DE UI) ---
+    # --- TELA CHEIA ATUALIZADO ---
     def entrar_tela_cheia(self):
         if self.em_tela_cheia: return
         self.em_tela_cheia = True
+        
+        # Esconde Sidebar e o Botão de Toggle
         self.sidebar.grid_forget()
-        self.main_frame.grid_configure(column=0, columnspan=2)
+        self.btn_toggle_sidebar.grid_forget()
+
+        # Main frame ocupa tudo (Coluna 0 e span de 3)
+        self.main_frame.grid_configure(column=0, columnspan=3)
+        
         self.painel_topo.pack_forget()
-        self.painel_base.pack_forget()
+        # painel_base removido anteriormente
+        
         self.grid_frame.pack_forget()
         self.grid_frame.pack(expand=True, fill="both", padx=0, pady=0)
+        
         indices_visiveis = [self.slot_maximized] if self.slot_maximized is not None else range(len(self.slot_frames))
         for i, frm in enumerate(self.slot_frames):
             if i in indices_visiveis:
@@ -318,6 +345,7 @@ class CentralMonitoramento(ctk.CTk):
                     child.pack_configure(padx=0, pady=0)
             else:
                 frm.grid_forget()
+        
         self.btn_sair_fs = ctk.CTkButton(self.main_frame, text="✖ SAIR", width=100, height=40,
                                          fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE, command=self.sair_tela_cheia)
         self.btn_sair_fs.place(relx=0.98, rely=0.02, anchor="ne")
@@ -327,14 +355,21 @@ class CentralMonitoramento(ctk.CTk):
         if not self.em_tela_cheia: return
         self.em_tela_cheia = False
         if hasattr(self, 'btn_sair_fs'): self.btn_sair_fs.destroy()
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.main_frame.grid_configure(column=1, columnspan=1)
-        self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
-        self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
+        
+        # Restaura layout original
+        if self.sidebar_visible:
+            self.sidebar.grid(row=0, column=0, sticky="nsew")
+        
+        self.btn_toggle_sidebar.grid(row=0, column=1, sticky="ns")
+        self.main_frame.grid_configure(column=2, columnspan=1)
+        
+        self.painel_topo.pack(side="top", fill="x", padx=0, pady=0)
+        
         self.grid_frame.pack_forget()
-        padx_grid = 0 if self.slot_maximized is not None else 10
-        pady_grid = 0 if self.slot_maximized is not None else (0, 10)
+        padx_grid = 0 if self.slot_maximized is not None else 0
+        pady_grid = 0 if self.slot_maximized is not None else 0
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=padx_grid, pady=pady_grid)
+        
         indices_visiveis = [self.slot_maximized] if self.slot_maximized is not None else range(len(self.slot_frames))
         for i, frm in enumerate(self.slot_frames):
             if i in indices_visiveis:
@@ -377,7 +412,7 @@ class CentralMonitoramento(ctk.CTk):
                 frm.grid_forget()
         self.slot_maximized = index
         ip = self.grid_cameras[index]
-        if ip: self.trocar_qualidade(ip, 101) # Alta qualidade ao maximizar
+        if ip: self.trocar_qualidade(ip, 101)
         self.btn_expandir.lift()
 
     def ao_pressionar_slot(self, event, index):
@@ -425,7 +460,7 @@ class CentralMonitoramento(ctk.CTk):
         return None
 
     def restaurar_grid(self):
-        self.grid_frame.pack_configure(padx=10, pady=(0, 10))
+        self.grid_frame.pack_configure(padx=0, pady=0)
         ip_foco = self.grid_cameras[self.slot_maximized] if self.slot_maximized is not None else None
         for i, frm in enumerate(self.slot_frames):
             row, col = i // 5, i % 5
@@ -445,7 +480,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_frames[index].configure(border_color=self.ACCENT_RED, border_width=2)
         self.title(f"Monitoramento ABI - Espaço {index + 1} selecionado")
         self.entry_nome.pack_forget()
-        self.container_info_topo.pack(side="left", padx=10, pady=5)
+        self.container_info_topo.pack(side="left", padx=10, pady=2)
         self.btn_renomear.configure(text="Renomear")
         ip_novo = self.grid_cameras[index]
         if ip_novo and ip_novo != "0.0.0.0":
@@ -458,8 +493,6 @@ class CentralMonitoramento(ctk.CTk):
             self.lbl_nome_topo.configure(text=self.formatar_nome(nome if nome else 'Câmera'))
             self.lbl_ip_topo.configure(text=f"({ip_novo})")
             self.btn_renomear.configure(state="normal")
-
-            # Posicionar botão de expansão no slot selecionado
             txt = "Diminuir" if self.slot_maximized == index else "Aumentar"
             self.btn_expandir.configure(text=txt)
             self.btn_expandir.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
@@ -471,8 +504,6 @@ class CentralMonitoramento(ctk.CTk):
             self.lbl_nome_topo.configure(text="Nenhuma câmera selecionada")
             self.lbl_ip_topo.configure(text="")
             self.btn_renomear.configure(state="disabled")
-
-            # Esconder o botão se o slot estiver vazio
             self.btn_expandir.place_forget()
         self.atualizar_botoes_controle()
 
@@ -512,9 +543,9 @@ class CentralMonitoramento(ctk.CTk):
 
     def atualizar_botoes_controle(self):
         if self.slot_maximized is not None:
-            self.btn_expandir.configure(text="Diminuir")
+            self.btn_expandir.configure(text="Diminuir", width=200, height=70, font=("Roboto", 16, "bold"))
         else:
-            self.btn_expandir.configure(text="Aumentar")
+            self.btn_expandir.configure(text="Aumentar", width=100, height=35, font=("Roboto", 12))
 
     def toggle_grid_layout(self):
         if self.slot_maximized is not None: self.restaurar_grid()
@@ -646,7 +677,6 @@ class CentralMonitoramento(ctk.CTk):
                         self.slot_labels[i].image = ctk_img
                     except: pass
 
-            # Garantir que o botão de expansão fique no topo
             if self.btn_expandir.winfo_ismapped():
                 self.btn_expandir.lift()
 
@@ -676,7 +706,7 @@ class CentralMonitoramento(ctk.CTk):
         else:
             self.salvar_nome()
             self.entry_nome.pack_forget()
-            self.container_info_topo.pack(side="left", padx=10, pady=5)
+            self.container_info_topo.pack(side="left", padx=10, pady=2)
             self.btn_renomear.configure(text="Renomear")
 
     def salvar_nome(self):
@@ -778,25 +808,18 @@ class CentralMonitoramento(ctk.CTk):
             self.atualizar_lista_presets_ui()
 
     def atualizar_lista_presets_ui(self):
-        # Limpar lista atual
         for child in self.scroll_presets.winfo_children():
             child.destroy()
-
-        # Rebuild em ordem alfabética
         for nome in sorted(self.presets.keys()):
             frm = ctk.CTkFrame(self.scroll_presets, height=45, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2)
             frm.pack_propagate(False)
-
             lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13), anchor="w", cursor="hand2")
             lbl.pack(side="left", fill="both", expand=True, padx=10)
             lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
-
-            # Botões de ação pequenos
             btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
                                      hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
             btn_ren.pack(side="right", padx=2)
-
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
                                      hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
             btn_del.pack(side="right", padx=5)
