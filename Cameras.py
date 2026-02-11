@@ -43,13 +43,36 @@ class CameraHandler:
             return False
 
     def loop_leitura(self):
-        while self.rodando and self.cap.isOpened():
+        falhas_consecutivas = 0
+        while self.rodando:
+            if not self.cap or not self.cap.isOpened():
+                self.conectado = False
+                time.sleep(2)
+                try:
+                    self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    if self.cap.isOpened():
+                        self.conectado = True
+                        falhas_consecutivas = 0
+                    else:
+                        continue
+                except:
+                    continue
+
             ret, frame = self.cap.read()
             if ret:
+                falhas_consecutivas = 0
+                self.conectado = True
                 with self.lock:
                     self.frame_atual = frame
                     self.frame_novo = True
             else:
+                falhas_consecutivas += 1
+                # Se falhar muitas vezes seguidas (aprox 2 segundos), tenta reabrir a captura
+                if falhas_consecutivas > 100:
+                    self.cap.release()
+                    self.conectado = False
+                    falhas_consecutivas = 0
                 time.sleep(0.01)
 
         if self.cap:
@@ -574,8 +597,12 @@ class CentralMonitoramento(ctk.CTk):
         if not (0 <= idx < 20): return
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
-        try: self.slot_labels[idx].configure(image="")
+
+        # Reset visual para estado padrão
+        self.slot_frames[idx].configure(fg_color=self.BG_SIDEBAR)
+        try: self.slot_labels[idx].configure(image="", fg_color="transparent")
         except: pass
+
         try:
             if ip == "0.0.0.0": self.slot_labels[idx].configure(text=f"Espaço {idx+1}")
             else: self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}")
@@ -628,25 +655,42 @@ class CentralMonitoramento(ctk.CTk):
         threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
     def _thread_conectar(self, ip, canal):
-        try:
-            url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
-            nova_cam = CameraHandler(url, canal)
-            sucesso = nova_cam.iniciar()
-            self.fila_conexoes.put((sucesso, nova_cam, ip))
-        except Exception as e:
-            print(f"Erro crítico na thread de conexão ({ip}): {e}")
-            self.fila_conexoes.put((False, None, ip))
+        tentativas = 3
+        nova_cam = None
+        sucesso = False
+
+        for i in range(tentativas):
+            try:
+                url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
+                nova_cam = CameraHandler(url, canal)
+                sucesso = nova_cam.iniciar()
+                if sucesso:
+                    break
+            except Exception as e:
+                print(f"Tentativa {i+1} falhou para {ip}: {e}")
+
+            if not sucesso:
+                time.sleep(1) # Aguarda antes da próxima tentativa
+
+        self.fila_conexoes.put((sucesso, nova_cam, ip))
 
     def _pos_conexao(self, sucesso, camera_obj, ip):
         if sucesso:
             self.camera_handlers[ip] = camera_obj
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+            # Sucesso: Garantir que o fundo volte ao normal
+            for i, grid_ip in enumerate(self.grid_cameras):
+                if grid_ip == ip:
+                    self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
+                    self.slot_labels[i].configure(fg_color="transparent")
         else:
             if ip in self.camera_handlers: del self.camera_handlers[ip]
             self.cooldown_conexoes[ip] = time.time()
             for i, grid_ip in enumerate(self.grid_cameras):
                 if grid_ip == ip:
-                    try: self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
+                    try:
+                        self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED)
+                        self.slot_frames[i].configure(fg_color=self.ACCENT_RED)
                     except: pass
         self.atualizar_botoes_controle()
 
@@ -657,40 +701,68 @@ class CentralMonitoramento(ctk.CTk):
                     sucesso, camera_obj, ip = self.fila_conexoes.get_nowait()
                     self._pos_conexao(sucesso, camera_obj, ip)
                 except: pass
+
             agora = time.time()
             indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
-            frames_cache = {}
+
+            raw_frames_cache = {}  # ip -> frame original
+            processed_images_cache = {}  # (ip, w, h) -> ctk_img
+
             for i in indices:
                 ip = self.grid_cameras[i]
                 if not ip or ip == "0.0.0.0": continue
+
+                # Gerenciamento de erro e background vermelho
                 if ip in self.cooldown_conexoes:
                     if agora - self.cooldown_conexoes[ip] < 10:
-                        try: self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
+                        try:
+                            self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED)
+                            self.slot_frames[i].configure(fg_color=self.ACCENT_RED)
                         except: pass
                         continue
-                if ip not in frames_cache:
+                    else:
+                        # Cooldown expirou, resetar para tentar novamente
+                        self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
+                        self.slot_labels[i].configure(fg_color="transparent")
+
+                # Busca ou obtém frame do handler
+                if ip not in raw_frames_cache:
                     handler = self.camera_handlers.get(ip)
                     if handler is None:
                         self.iniciar_conexao_assincrona(ip, 102)
-                        frames_cache[ip] = None
+                        raw_frames_cache[ip] = None
                         continue
                     if handler == "CONECTANDO":
-                        frames_cache[ip] = None
+                        raw_frames_cache[ip] = None
                         continue
-                    frames_cache[ip] = handler.pegar_frame()
-                frame = frames_cache[ip]
+                    raw_frames_cache[ip] = handler.pegar_frame()
+
+                frame = raw_frames_cache[ip]
                 if frame is not None:
                     try:
                         w = self.slot_frames[i].winfo_width()
                         h = self.slot_frames[i].winfo_height()
                         w = max(10, w - 6); h = max(10, h - 6)
-                        frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
-                        pos = (10, h - 10)
-                        cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                        cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-                        pil_img = Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB))
-                        ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
-                        try: self.slot_labels[i].configure(image=ctk_img, text="")
+
+                        cache_key = (ip, w, h)
+                        if cache_key in processed_images_cache:
+                            ctk_img = processed_images_cache[cache_key]
+                        else:
+                            # Processamento otimizado do frame
+                            frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
+                            pos = (10, h - 10)
+                            cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                            cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
+                            rgb_frame = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+                            pil_img = Image.fromarray(rgb_frame)
+                            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
+                            processed_images_cache[cache_key] = ctk_img
+
+                        try:
+                            # Se está mostrando vídeo, garante fundo transparente
+                            self.slot_labels[i].configure(image=ctk_img, text="", fg_color="transparent")
+                            self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
                         except: pass
                         self.slot_labels[i].image = ctk_img
                         
@@ -700,7 +772,7 @@ class CentralMonitoramento(ctk.CTk):
                              
                     except: pass
         except Exception as e: print(f"Erro no loop de exibição: {e}")
-        finally: self.after(40, self.loop_exibicao)
+        finally: self.after(30, self.loop_exibicao)
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
