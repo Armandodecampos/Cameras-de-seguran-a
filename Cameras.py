@@ -645,7 +645,7 @@ class CentralMonitoramento(ctk.CTk):
         if not ip or ip == "0.0.0.0": return
         agora = time.time()
         if ip in self.cooldown_conexoes:
-            if agora - self.cooldown_conexoes[ip] < 10: return
+            if agora - self.cooldown_conexoes[ip] < 3: return
         if ip in self.camera_handlers:
             handler = self.camera_handlers[ip]
             if handler == "CONECTANDO": return
@@ -655,7 +655,7 @@ class CentralMonitoramento(ctk.CTk):
         threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
     def _thread_conectar(self, ip, canal):
-        tentativas = 3
+        tentativas = 2
         nova_cam = None
         sucesso = False
 
@@ -670,7 +670,7 @@ class CentralMonitoramento(ctk.CTk):
                 print(f"Tentativa {i+1} falhou para {ip}: {e}")
 
             if not sucesso:
-                time.sleep(1) # Aguarda antes da próxima tentativa
+                time.sleep(0.2) # Aguarda antes da próxima tentativa
 
         self.fila_conexoes.put((sucesso, nova_cam, ip))
 
@@ -689,8 +689,10 @@ class CentralMonitoramento(ctk.CTk):
             for i, grid_ip in enumerate(self.grid_cameras):
                 if grid_ip == ip:
                     try:
-                        self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED)
-                        self.slot_frames[i].configure(fg_color=self.ACCENT_RED)
+                        self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
+                        # Mantém fundo padrão conforme solicitado
+                        self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
+                        self.slot_labels[i].configure(fg_color="transparent")
                     except: pass
         self.atualizar_botoes_controle()
 
@@ -712,12 +714,11 @@ class CentralMonitoramento(ctk.CTk):
                 ip = self.grid_cameras[i]
                 if not ip or ip == "0.0.0.0": continue
 
-                # Gerenciamento de erro e background vermelho
+                # Gerenciamento de erro
                 if ip in self.cooldown_conexoes:
-                    if agora - self.cooldown_conexoes[ip] < 10:
+                    if agora - self.cooldown_conexoes[ip] < 3:
                         try:
-                            self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED)
-                            self.slot_frames[i].configure(fg_color=self.ACCENT_RED)
+                            self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
                         except: pass
                         continue
                     else:
