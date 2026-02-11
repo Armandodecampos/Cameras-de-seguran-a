@@ -212,15 +212,16 @@ class CentralMonitoramento(ctk.CTk):
                                          font=("Roboto", 11), text_color=self.TEXT_S)
         self.lbl_ptz_hint.pack(side="bottom")
 
-        self.btn_toggle_grid = ctk.CTkButton(self.painel_base, text="1 camera", fg_color=self.ACCENT_WINE,
-                                             hover_color=self.ACCENT_RED, height=40, command=self.toggle_grid_layout)
-        self.btn_toggle_grid.pack(side="left", expand=True, fill="x", padx=5)
-
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10))
 
         for i in range(4): self.grid_frame.grid_rowconfigure(i, weight=1)
         for i in range(5): self.grid_frame.grid_columnconfigure(i, weight=1)
+
+        # Botão Aumentar/Diminuir sobreposto à câmera
+        self.btn_expandir = ctk.CTkButton(self.grid_frame, text="Aumentar", width=100, height=35,
+                                           fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                           command=self.toggle_grid_layout)
 
         self.slot_frames = []
         self.slot_labels = []
@@ -377,6 +378,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_maximized = index
         ip = self.grid_cameras[index]
         if ip: self.trocar_qualidade(ip, 101) # Alta qualidade ao maximizar
+        self.btn_expandir.lift()
 
     def ao_pressionar_slot(self, event, index):
         self.selecionar_slot(index)
@@ -433,6 +435,7 @@ class CentralMonitoramento(ctk.CTk):
             for child in frm.winfo_children(): child.pack_configure(padx=2, pady=2)
         self.slot_maximized = None
         if ip_foco: self.trocar_qualidade(ip_foco, 102)
+        self.btn_expandir.lift()
 
     def selecionar_slot(self, index):
         if not (0 <= index < 20): return
@@ -455,6 +458,12 @@ class CentralMonitoramento(ctk.CTk):
             self.lbl_nome_topo.configure(text=self.formatar_nome(nome if nome else 'Câmera'))
             self.lbl_ip_topo.configure(text=f"({ip_novo})")
             self.btn_renomear.configure(state="normal")
+
+            # Posicionar botão de expansão no slot selecionado
+            txt = "Diminuir" if self.slot_maximized == index else "Aumentar"
+            self.btn_expandir.configure(text=txt)
+            self.btn_expandir.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
+            self.btn_expandir.lift()
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
@@ -462,6 +471,9 @@ class CentralMonitoramento(ctk.CTk):
             self.lbl_nome_topo.configure(text="Nenhuma câmera selecionada")
             self.lbl_ip_topo.configure(text="")
             self.btn_renomear.configure(state="disabled")
+
+            # Esconder o botão se o slot estiver vazio
+            self.btn_expandir.place_forget()
         self.atualizar_botoes_controle()
 
     def limpar_slot_atual(self):
@@ -500,9 +512,9 @@ class CentralMonitoramento(ctk.CTk):
 
     def atualizar_botoes_controle(self):
         if self.slot_maximized is not None:
-            self.btn_toggle_grid.configure(text="Minimizar camera", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S)
+            self.btn_expandir.configure(text="Diminuir")
         else:
-            self.btn_toggle_grid.configure(text="Expandir camera", fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED)
+            self.btn_expandir.configure(text="Aumentar")
 
     def toggle_grid_layout(self):
         if self.slot_maximized is not None: self.restaurar_grid()
@@ -633,6 +645,11 @@ class CentralMonitoramento(ctk.CTk):
                         except: pass
                         self.slot_labels[i].image = ctk_img
                     except: pass
+
+            # Garantir que o botão de expansão fique no topo
+            if self.btn_expandir.winfo_ismapped():
+                self.btn_expandir.lift()
+
         except Exception as e: print(f"Erro no loop de exibição: {e}")
         finally: self.after(40, self.loop_exibicao)
 
