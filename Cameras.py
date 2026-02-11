@@ -64,11 +64,18 @@ class CameraHandler:
                 falhas_consecutivas = 0
                 self.conectado = True
 
-                # Pre-processamento: Conversão de cor no thread da câmera (Otimização de Performance)
+                # Pre-processamento: Texto, Conversão e PIL no thread da câmera (Otimização Máxima)
+                # Adiciona IP no frame original antes de converter (mais rápido que no loop)
+                h, w = frame.shape[:2]
+                pos = (10, h - 20)
+                cv2.putText(frame, self.url.split('@')[-1].split(':')[0], pos, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,0), 3)
+                cv2.putText(frame, self.url.split('@')[-1].split(':')[0], pos, cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2)
+
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(rgb_frame)
 
                 with self.lock:
-                    self.frame_atual = rgb_frame
+                    self.frame_atual = pil_img
                     self.frame_novo = True
             else:
                 falhas_consecutivas += 1
@@ -484,7 +491,7 @@ class CentralMonitoramento(ctk.CTk):
                     self.grid_cameras[target_idx], self.grid_cameras[source_idx]
                 for idx in [source_idx, target_idx]:
                     if self.grid_cameras[idx] == "0.0.0.0":
-                        try: self.slot_labels[idx].configure(image="", text=f"Espaço {idx+1}")
+                        try: self.slot_labels[idx].configure(image=None, text=f"Espaço {idx+1}")
                         except: pass
                         self.slot_labels[idx].image = None
                 self.salvar_grid()
@@ -609,7 +616,7 @@ class CentralMonitoramento(ctk.CTk):
 
         # Reset visual para estado padrão
         self.slot_frames[idx].configure(fg_color=self.BG_SIDEBAR)
-        try: self.slot_labels[idx].configure(image="", fg_color="transparent")
+        try: self.slot_labels[idx].configure(image=None, fg_color="transparent")
         except: pass
 
         try:
@@ -657,7 +664,7 @@ class CentralMonitoramento(ctk.CTk):
                 if not self.fila_pendente_conexoes.empty():
                     ip, canal = self.fila_pendente_conexoes.get()
                     self._iniciar_conexao_real(ip, canal)
-                    time.sleep(0.3) # Delay entre disparos de threads
+                    time.sleep(0.8) # Delay aumentado para evitar erro 500
                 else:
                     time.sleep(0.1)
             except:
@@ -695,7 +702,7 @@ class CentralMonitoramento(ctk.CTk):
                 print(f"Tentativa {i+1} falhou para {ip}: {e}")
 
             if not sucesso:
-                time.sleep(0.5) # Aguarda antes da próxima tentativa
+                time.sleep(1.5) # Delay aumentado para recuperação do servidor
 
         self.fila_conexoes.put((sucesso, nova_cam, ip))
 
@@ -773,17 +780,12 @@ class CentralMonitoramento(ctk.CTk):
                         if cache_key in processed_images_cache:
                             ctk_img = processed_images_cache[cache_key]
                         else:
-                            # Otimização: INTER_NEAREST para grid (muito rápido), INTER_LINEAR apenas para maximizado
-                            interp = cv2.INTER_LINEAR if self.slot_maximized is not None else cv2.INTER_NEAREST
-                            frame_resized = cv2.resize(frame, (w, h), interpolation=interp)
+                            # Redimensionamento rápido de imagem PIL (Otimizado)
+                            # Se for maximizado, usa qualidade melhor
+                            resample_mode = Image.BILINEAR if self.slot_maximized is not None else Image.NEAREST
+                            img_resized = frame.resize((w, h), resample=resample_mode)
 
-                            pos = (10, h - 10)
-                            cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                            cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-
-                            # Note: rgb_frame não é mais necessário aqui, pois já vem convertido do handler
-                            pil_img = Image.fromarray(frame_resized)
-                            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
+                            ctk_img = ctk.CTkImage(light_image=img_resized, dark_image=img_resized, size=(w, h))
                             processed_images_cache[cache_key] = ctk_img
 
                         try:
@@ -793,9 +795,10 @@ class CentralMonitoramento(ctk.CTk):
                         except: pass
                         self.slot_labels[i].image = ctk_img
                         
-                        # Garante que o botão overlay (se existir neste slot) fique por cima do vídeo
+                        # Garante que o botão overlay (se existir neste slot) fique por cima do vídeo no canto inferior direito
                         if self.btn_overlay_cam and self.slot_selecionado == i:
                              self.btn_overlay_cam.lift()
+                             self.btn_overlay_cam.place(relx=1.0, rely=1.0, x=-5, y=-5, anchor="se")
                              
                     except: pass
         except Exception as e: print(f"Erro no loop de exibição: {e}")
@@ -901,12 +904,34 @@ class CentralMonitoramento(ctk.CTk):
 
     def aplicar_preset(self, nome):
         preset = self.presets.get(nome)
-        if preset:
-            for i, ip in enumerate(preset):
-                if i < 20:
-                    self.atribuir_ip_ao_slot(i, ip)
-            self.selecionar_slot(self.slot_selecionado)
-            messagebox.showinfo("Presets", f"Predefinição '{nome}' aplicada!")
+        if not preset: return
+
+        # 1. Identifica câmeras que não estarão no novo preset e as para imediatamente
+        ips_novos = set(preset)
+        for ip in list(self.camera_handlers.keys()):
+            if ip not in ips_novos and ip != "0.0.0.0":
+                if ip in self.camera_handlers:
+                    try:
+                        handler = self.camera_handlers[ip]
+                        if hasattr(handler, 'parar'): handler.parar()
+                    except: pass
+                    del self.camera_handlers[ip]
+
+        # 2. Limpa visualmente todos os espaços antes de carregar o novo
+        for i in range(20):
+            self.grid_cameras[i] = "0.0.0.0"
+            self.slot_labels[i].configure(image=None, text=f"Espaço {i+1}")
+            self.slot_labels[i].image = None
+            self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
+            self.slot_labels[i].configure(fg_color="transparent")
+
+        # 3. Aplica o novo preset
+        for i, ip in enumerate(preset):
+            if i < 20:
+                self.atribuir_ip_ao_slot(i, ip)
+
+        self.selecionar_slot(self.slot_selecionado)
+        messagebox.showinfo("Presets", f"Predefinição '{nome}' aplicada!")
 
     def deletar_preset(self, nome):
         if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
