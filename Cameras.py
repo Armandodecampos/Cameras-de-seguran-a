@@ -82,16 +82,12 @@ class CentralMonitoramento(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Sistema de Monitoramento ABI - Full Control V6")
+        self.title("Sistema de Monitoramento ABI - Full Control V5")
         self.geometry("1200x800")
         ctk.set_appearance_mode("Dark")
         
         # --- CONFIGURAÇÃO DE JANELA ---
-        # Tenta maximizar a janela (cross-platform friendly)
-        try:
-            self.state("zoomed")
-        except:
-            self.after(0, lambda: self.state("zoomed"))
+        self.after(0, lambda: self.state("zoomed"))
         
         # Credenciais para PTZ
         self.user_ptz = "admin"
@@ -135,23 +131,21 @@ class CentralMonitoramento(ctk.CTk):
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None 
         
+        # Variável para guardar o botão de overlay (Aumentar/Diminuir)
         self.btn_overlay_cam = None
         
-        # --- ESTABILIDADE DE LAYOUT ---
-        # Define explicitamente os pesos das colunas principais
-        self.grid_columnconfigure(0, weight=0, minsize=320) # Coluna da Sidebar (Fixa)
-        self.grid_columnconfigure(1, weight=1) # Coluna Principal (Expansível)
-        self.grid_rowconfigure(0, weight=1)
+        # Controle de visibilidade dos menus (Começa oculto)
+        self.menus_visiveis = False
 
-        # Começa com o menu visível para garantir estabilidade
-        self.menus_visiveis = True
+        # --- LAYOUT ---
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
         # 1. SIDEBAR (Menu Lateral)
         self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
-        self.sidebar.grid(row=0, column=0, sticky="nsew") # Fixa na coluna 0
-        self.sidebar.grid_propagate(False) # Garante que a sidebar mantenha a largura de 320
+        # Inicialmente não faz grid, pois começa oculto
         
-        # Botão FECHAR MENU
+        # --- NOVO: Botão FECHAR MENU dentro da Sidebar (Não sobrepõe) ---
         self.btn_fechar_menu = ctk.CTkButton(self.sidebar, text="FECHAR MENU", 
                                              fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
                                              font=("Roboto", 12, "bold"), height=40,
@@ -186,6 +180,7 @@ class CentralMonitoramento(ctk.CTk):
                                                 command=self.salvar_preset_atual)
         self.btn_salvar_preset.pack(fill="x", padx=10, pady=10)
 
+        # --- ALTERADO: DE "LISTA DE PRESETS" PARA "PREDEFINIÇÕES" ---
         ctk.CTkLabel(tab_presets, text="PREDEFINIÇÕES", font=("Roboto", 14, "bold"), text_color=self.TEXT_S).pack(pady=5)
 
         self.scroll_presets = ctk.CTkScrollableFrame(tab_presets, fg_color="transparent")
@@ -193,17 +188,14 @@ class CentralMonitoramento(ctk.CTk):
 
         # 2. ÁREA PRINCIPAL
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
-        # Fixa na coluna 1 (ao lado da sidebar)
-        self.main_frame.grid(row=0, column=1, sticky="nsew") 
+        self.main_frame.grid(row=0, column=0, columnspan=2, sticky="nsew") 
 
         # PAINEL TOPO
         self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color=self.BG_PANEL, height=50)
-        self.painel_topo.pack(side="top", fill="x", padx=10, pady=10)
 
         # INFO CÂMERA NO TOPO
         self.container_info_topo = ctk.CTkFrame(self.painel_topo, fg_color="transparent")
-        # --- CORREÇÃO DE ALINHAMENTO: padx reduzido para 10 (era 50) ---
-        self.container_info_topo.pack(side="left", padx=10, pady=5) 
+        self.container_info_topo.pack(side="left", padx=50, pady=5) 
 
         self.lbl_nome_topo = ctk.CTkLabel(self.container_info_topo, text="Nenhuma câmera selecionada",
                                           font=("Roboto", 15, "bold"), text_color=self.ACCENT_RED)
@@ -226,17 +218,19 @@ class CentralMonitoramento(ctk.CTk):
 
         # PAINEL BASE
         self.painel_base = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
 
         self.lbl_ptz_hint = ctk.CTkLabel(self.painel_base, text="Use as setas do teclado para mover a câmera selecionada", 
                                          font=("Roboto", 11), text_color=self.TEXT_S)
-        self.lbl_ptz_hint.pack(side="bottom", pady=5)
+        self.lbl_ptz_hint.pack(side="bottom")
 
-        # --- BOTÃO "1 CAMERA / EXPANDIR" REMOVIDO DAQUI CONFORME SOLICITADO ---
+        # Botão Toggle Grid no painel inferior (ainda existe, mas agora temos os botões overlay)
+        self.btn_toggle_grid = ctk.CTkButton(self.painel_base, text="1 camera", fg_color=self.ACCENT_WINE,
+                                             hover_color=self.ACCENT_RED, height=40, command=self.toggle_grid_layout)
+        self.btn_toggle_grid.pack(side="left", expand=True, fill="x", padx=5)
 
         # GRID DE VÍDEO
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
-        self.grid_frame.pack(side="top", expand=True, fill="both", padx=10, pady=(0, 10)) 
+        self.grid_frame.pack(side="top", expand=True, fill="both", padx=0, pady=0) 
 
         for i in range(4): self.grid_frame.grid_rowconfigure(i, weight=1)
         for i in range(5): self.grid_frame.grid_columnconfigure(i, weight=1)
@@ -260,12 +254,13 @@ class CentralMonitoramento(ctk.CTk):
             self.slot_frames.append(frm)
             self.slot_labels.append(lbl)
 
-        # --- BOTÃO MENU FLUTUANTE ---
+        # --- BOTÃO MENU FLUTUANTE (ABRIR) ---
+        # Este botão aparece apenas quando o menu lateral está fechado
         self.btn_abrir_menu = ctk.CTkButton(self, text="ABRIR MENU", width=120, height=40,
                                       fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
                                       font=("Roboto", 12, "bold"),
                                       command=self.alternar_menu)
-        # Não posiciona o botão flutuante inicialmente, pois o menu começa aberto
+        self.btn_abrir_menu.place(x=10, y=10) # FLUTUANTE
 
         self.criar_botoes_iniciais()
         for i, ip in enumerate(self.grid_cameras):
@@ -277,40 +272,40 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_presets_ui()
         self.loop_exibicao()
 
-    # --- LÓGICA DO MENU EXPANSÍVEL REVISADA ---
+    # --- LÓGICA DO MENU EXPANSÍVEL ---
     def alternar_menu(self):
         if self.menus_visiveis:
             # OCULTAR MENUS (Modo Imersivo)
-            self.sidebar.grid_remove() # Remove da grid, mas mantém configurações de coluna
+            self.sidebar.grid_remove()
             self.painel_topo.pack_forget()
             self.painel_base.pack_forget()
             
-            # Expande o main_frame para ocupar coluna 0 e 1
+            # Expande o main_frame para a coluna 0
             self.main_frame.grid_configure(column=0, columnspan=2)
             
-            # Remove paddings para imersão total
+            # Remove paddings do grid de vídeo para aproveitar espaço total
             self.grid_frame.pack_configure(padx=0, pady=0)
             
             self.menus_visiveis = False
             
-            # Mostra o botão flutuante
+            # Mostra o botão flutuante de ABRIR
             self.btn_abrir_menu.place(x=10, y=10)
             self.btn_abrir_menu.lift()
         else:
-            # MOSTRAR MENUS (Modo Controle - Padrão)
+            # MOSTRAR MENUS (Modo Controle)
+            # Esconde o botão flutuante de ABRIR
             self.btn_abrir_menu.place_forget()
 
-            # Restaura Sidebar na coluna 0
             self.sidebar.grid(row=0, column=0, sticky="nsew")
             
-            # Restringe main_frame para coluna 1 apenas
+            # Restringe main_frame para coluna 1
             self.main_frame.grid_configure(column=1, columnspan=1)
             
-            # Mostra painéis
+            # Mostra painéis superior e inferior
             self.painel_topo.pack(side="top", fill="x", padx=10, pady=10, before=self.grid_frame)
             self.painel_base.pack(side="bottom", fill="x", padx=10, pady=10)
             
-            # Adiciona paddings
+            # Adiciona paddings para estética
             self.grid_frame.pack_configure(padx=10, pady=(0, 10))
             
             self.menus_visiveis = True
@@ -364,7 +359,9 @@ class CentralMonitoramento(ctk.CTk):
         self.destroy()
         os._exit(0)
 
+    # --- FUNÇÃO ATUALIZADA PARA BOTÃO SOBREPOSTO NA CÂMERA ---
     def atualizar_botao_overlay(self, slot_index):
+        # Remove botão anterior, se existir
         if self.btn_overlay_cam:
             try:
                 self.btn_overlay_cam.destroy()
@@ -375,16 +372,20 @@ class CentralMonitoramento(ctk.CTk):
         if slot_index is None:
             return
 
+        # Define frame pai (o slot selecionado)
         parent_frame = self.slot_frames[slot_index]
         
+        # Lógica do botão (Aumentar ou Diminuir)
         if self.slot_maximized == slot_index:
             texto = "Diminuir"
             cmd = self.toggle_grid_layout
+            # AGORA USA COR DE DESTAQUE (Vermelho/Vinho)
             cor = self.ACCENT_WINE
             hover = self.ACCENT_RED
+            # DOBRO DO TAMANHO (Width 70 -> 140, Height 24 -> 48)
             w_btn = 140 
             h_btn = 48
-            font_size = 14 
+            font_size = 14 # Fonte levemente maior
         else:
             texto = "Aumentar"
             cmd = lambda: self.maximizar_slot(slot_index)
@@ -394,14 +395,18 @@ class CentralMonitoramento(ctk.CTk):
             h_btn = 24
             font_size = 11
 
+        # Cria o botão dentro do frame do slot
         self.btn_overlay_cam = ctk.CTkButton(parent_frame, text=texto, width=w_btn, height=h_btn,
                                              fg_color=cor, hover_color=hover,
                                              font=("Roboto", font_size, "bold"),
                                              bg_color="transparent",
                                              command=cmd)
         
+        # --- POSICIONAMENTO NO CANTO INFERIOR DIREITO ---
+        # relx=1.0, rely=1.0 define o ponto de referência no canto inferior direito do frame pai
+        # anchor="se" (South East) faz com que o botão cresça para a esquerda e para cima a partir desse ponto
         self.btn_overlay_cam.place(relx=1.0, rely=1.0, x=-5, y=-5, anchor="se")
-        self.btn_overlay_cam.lift()
+        self.btn_overlay_cam.lift() # Traz para frente
 
     def maximizar_slot(self, index):
         self.grid_frame.pack_configure(padx=0, pady=0)
@@ -416,6 +421,7 @@ class CentralMonitoramento(ctk.CTk):
         ip = self.grid_cameras[index]
         if ip: self.trocar_qualidade(ip, 101)
         
+        # Atualiza o botão overlay para "Diminuir"
         self.atualizar_botao_overlay(index)
 
     def ao_pressionar_slot(self, event, index):
@@ -463,6 +469,7 @@ class CentralMonitoramento(ctk.CTk):
         return None
 
     def restaurar_grid(self):
+        # Se os menus estiverem visíveis, restaura com padding
         pady = (0, 10) if self.menus_visiveis else 0
         padx = 10 if self.menus_visiveis else 0
         self.grid_frame.pack_configure(padx=padx, pady=pady)
@@ -479,6 +486,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_maximized = None
         if ip_foco: self.trocar_qualidade(ip_foco, 102)
         
+        # Restaura botão "Aumentar" no slot que estava maximizado
         if slot_anterior is not None:
              self.atualizar_botao_overlay(slot_anterior)
 
@@ -490,7 +498,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_frames[index].configure(border_color=self.ACCENT_RED, border_width=2)
         self.title(f"Monitoramento ABI - Espaço {index + 1} selecionado")
         self.entry_nome.pack_forget()
-        self.container_info_topo.pack(side="left", padx=10, pady=5)
+        self.container_info_topo.pack(side="left", padx=50, pady=5)
         self.btn_renomear.configure(text="Renomear")
         ip_novo = self.grid_cameras[index]
         if ip_novo and ip_novo != "0.0.0.0":
@@ -511,7 +519,9 @@ class CentralMonitoramento(ctk.CTk):
             self.lbl_ip_topo.configure(text="")
             self.btn_renomear.configure(state="disabled")
         
+        # Atualiza o botão sobreposto
         self.atualizar_botao_overlay(index)
+        
         self.atualizar_botoes_controle()
 
     def limpar_slot_atual(self):
@@ -549,7 +559,11 @@ class CentralMonitoramento(ctk.CTk):
                 self.iniciar_conexao_assincrona(ip, 102)
 
     def atualizar_botoes_controle(self):
-        pass
+        # Atualiza botão rodapé
+        if self.slot_maximized is not None:
+            self.btn_toggle_grid.configure(text="Minimizar camera", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S)
+        else:
+            self.btn_toggle_grid.configure(text="Expandir camera", fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED)
 
     def toggle_grid_layout(self):
         if self.slot_maximized is not None: self.restaurar_grid()
@@ -563,11 +577,8 @@ class CentralMonitoramento(ctk.CTk):
         try: self.slot_labels[idx].configure(image="")
         except: pass
         try:
-            # --- RESET CORES AO REINICIAR/LIMPAR ---
-            if ip == "0.0.0.0": 
-                self.slot_labels[idx].configure(text=f"Espaço {idx+1}", fg_color="transparent", text_color=self.TEXT_P)
-            else: 
-                self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}", fg_color="transparent", text_color=self.TEXT_P)
+            if ip == "0.0.0.0": self.slot_labels[idx].configure(text=f"Espaço {idx+1}")
+            else: self.slot_labels[idx].configure(text=f"CONECTANDO\n{ip}")
         except: pass
         self.slot_labels[idx].image = None
         self.update_idletasks()
@@ -635,9 +646,7 @@ class CentralMonitoramento(ctk.CTk):
             self.cooldown_conexoes[ip] = time.time()
             for i, grid_ip in enumerate(self.grid_cameras):
                 if grid_ip == ip:
-                    try: 
-                        # --- ERRO COM FUNDO VERMELHO ---
-                        self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED, text_color="white")
+                    try: self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
                     except: pass
         self.atualizar_botoes_controle()
 
@@ -656,9 +665,7 @@ class CentralMonitoramento(ctk.CTk):
                 if not ip or ip == "0.0.0.0": continue
                 if ip in self.cooldown_conexoes:
                     if agora - self.cooldown_conexoes[ip] < 10:
-                        try: 
-                            # --- ERRO COM FUNDO VERMELHO ---
-                            self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED, text_color="white")
+                        try: self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
                         except: pass
                         continue
                 if ip not in frames_cache:
@@ -683,12 +690,11 @@ class CentralMonitoramento(ctk.CTk):
                         cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
                         pil_img = Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB))
                         ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
-                        try: 
-                            # --- SUCESSO: LIMPA COR DE FUNDO ---
-                            self.slot_labels[i].configure(image=ctk_img, text="", fg_color="transparent")
+                        try: self.slot_labels[i].configure(image=ctk_img, text="")
                         except: pass
                         self.slot_labels[i].image = ctk_img
                         
+                        # Garante que o botão overlay (se existir neste slot) fique por cima do vídeo
                         if self.btn_overlay_cam and self.slot_selecionado == i:
                              self.btn_overlay_cam.lift()
                              
@@ -719,7 +725,7 @@ class CentralMonitoramento(ctk.CTk):
         else:
             self.salvar_nome()
             self.entry_nome.pack_forget()
-            self.container_info_topo.pack(side="left", padx=10, pady=5)
+            self.container_info_topo.pack(side="left", padx=50, pady=5)
             self.btn_renomear.configure(text="Renomear")
 
     def salvar_nome(self):
@@ -821,9 +827,11 @@ class CentralMonitoramento(ctk.CTk):
             self.atualizar_lista_presets_ui()
 
     def atualizar_lista_presets_ui(self):
+        # Limpar lista atual
         for child in self.scroll_presets.winfo_children():
             child.destroy()
 
+        # Rebuild em ordem alfabética
         for nome in sorted(self.presets.keys()):
             frm = ctk.CTkFrame(self.scroll_presets, height=45, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2)
@@ -833,6 +841,7 @@ class CentralMonitoramento(ctk.CTk):
             lbl.pack(side="left", fill="both", expand=True, padx=10)
             lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
 
+            # Botões de ação pequenos
             btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
                                      hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
             btn_ren.pack(side="right", padx=2)
