@@ -11,8 +11,8 @@ import requests
 from requests.auth import HTTPDigestAuth
 from tkinter import messagebox, simpledialog
 
-# Configuração de baixa latência para OpenCV/FFMPEG
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
+# Configuração de baixa latência para OpenCV/FFMPEG - Trocado UDP por TCP para maior estabilidade
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
@@ -63,8 +63,12 @@ class CameraHandler:
             if ret:
                 falhas_consecutivas = 0
                 self.conectado = True
+
+                # Pre-processamento: Conversão de cor no thread da câmera (Otimização de Performance)
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
                 with self.lock:
-                    self.frame_atual = frame
+                    self.frame_atual = rgb_frame
                     self.frame_novo = True
             else:
                 falhas_consecutivas += 1
@@ -151,6 +155,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_selecionado = 0
         self.press_data = None
         self.fila_conexoes = queue.Queue()
+        self.fila_pendente_conexoes = queue.Queue()
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None 
         
@@ -293,6 +298,10 @@ class CentralMonitoramento(ctk.CTk):
         self.restaurar_grid()
         self.alternar_todos_streams()
         self.atualizar_lista_presets_ui()
+
+        # Inicia worker para conexões escalonadas
+        threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
+
         self.loop_exibicao()
 
     # --- LÓGICA DO MENU EXPANSÍVEL ---
@@ -641,6 +650,19 @@ class CentralMonitoramento(ctk.CTk):
         if len(nome) > max_chars: return nome[:max_chars-3] + "..."
         return nome
 
+    def _processar_fila_conexoes_pendentes(self):
+        """Worker que inicia conexões uma a uma para evitar erro 500 do servidor"""
+        while True:
+            try:
+                if not self.fila_pendente_conexoes.empty():
+                    ip, canal = self.fila_pendente_conexoes.get()
+                    self._iniciar_conexao_real(ip, canal)
+                    time.sleep(0.3) # Delay entre disparos de threads
+                else:
+                    time.sleep(0.1)
+            except:
+                time.sleep(1)
+
     def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip or ip == "0.0.0.0": return
         agora = time.time()
@@ -652,10 +674,13 @@ class CentralMonitoramento(ctk.CTk):
             if hasattr(handler, 'rodando') and handler.rodando: return
             del self.camera_handlers[ip]
         self.camera_handlers[ip] = "CONECTANDO"
+        self.fila_pendente_conexoes.put((ip, canal))
+
+    def _iniciar_conexao_real(self, ip, canal):
         threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
     def _thread_conectar(self, ip, canal):
-        tentativas = 2
+        tentativas = 3
         nova_cam = None
         sucesso = False
 
@@ -670,7 +695,7 @@ class CentralMonitoramento(ctk.CTk):
                 print(f"Tentativa {i+1} falhou para {ip}: {e}")
 
             if not sucesso:
-                time.sleep(0.2) # Aguarda antes da próxima tentativa
+                time.sleep(0.5) # Aguarda antes da próxima tentativa
 
         self.fila_conexoes.put((sucesso, nova_cam, ip))
 
@@ -689,10 +714,8 @@ class CentralMonitoramento(ctk.CTk):
             for i, grid_ip in enumerate(self.grid_cameras):
                 if grid_ip == ip:
                     try:
-                        self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
-                        # Mantém fundo padrão conforme solicitado
-                        self.slot_frames[i].configure(fg_color=self.BG_SIDEBAR)
-                        self.slot_labels[i].configure(fg_color="transparent")
+                        self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED)
+                        self.slot_frames[i].configure(fg_color=self.ACCENT_RED)
                     except: pass
         self.atualizar_botoes_controle()
 
@@ -718,7 +741,8 @@ class CentralMonitoramento(ctk.CTk):
                 if ip in self.cooldown_conexoes:
                     if agora - self.cooldown_conexoes[ip] < 3:
                         try:
-                            self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
+                            self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}", fg_color=self.ACCENT_RED)
+                            self.slot_frames[i].configure(fg_color=self.ACCENT_RED)
                         except: pass
                         continue
                     else:
@@ -749,14 +773,16 @@ class CentralMonitoramento(ctk.CTk):
                         if cache_key in processed_images_cache:
                             ctk_img = processed_images_cache[cache_key]
                         else:
-                            # Processamento otimizado do frame
-                            frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
+                            # Otimização: INTER_NEAREST para grid (muito rápido), INTER_LINEAR apenas para maximizado
+                            interp = cv2.INTER_LINEAR if self.slot_maximized is not None else cv2.INTER_NEAREST
+                            frame_resized = cv2.resize(frame, (w, h), interpolation=interp)
+
                             pos = (10, h - 10)
                             cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
                             cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
-                            rgb_frame = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
-                            pil_img = Image.fromarray(rgb_frame)
+                            # Note: rgb_frame não é mais necessário aqui, pois já vem convertido do handler
+                            pil_img = Image.fromarray(frame_resized)
                             ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
                             processed_images_cache[cache_key] = ctk_img
 
@@ -773,7 +799,7 @@ class CentralMonitoramento(ctk.CTk):
                              
                     except: pass
         except Exception as e: print(f"Erro no loop de exibição: {e}")
-        finally: self.after(30, self.loop_exibicao)
+        finally: self.after(50, self.loop_exibicao)
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
