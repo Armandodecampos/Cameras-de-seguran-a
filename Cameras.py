@@ -13,6 +13,7 @@ from tkinter import messagebox, simpledialog
 
 # Configuração de baixa latência para OpenCV/FFMPEG
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
+cv2.setNumThreads(0)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
@@ -21,10 +22,13 @@ class CameraHandler:
         self.canal = canal
         self.cap = None
         self.rodando = False
-        self.frame_atual = None
+        self.frame_pil = None
         self.frame_novo = False
         self.lock = threading.Lock()
         self.conectado = False
+        self.tamanho_alvo = (640, 480)
+        self.interpolation = cv2.INTER_NEAREST
+        self.ip_display = url.split('@')[-1].split(':')[0] if '@' in url else "Camera"
 
     def iniciar(self):
         try:
@@ -46,9 +50,19 @@ class CameraHandler:
         while self.rodando and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
-                with self.lock:
-                    self.frame_atual = frame
-                    self.frame_novo = True
+                try:
+                    w, h = self.tamanho_alvo
+                    frame_res = cv2.resize(frame, (w, h), interpolation=self.interpolation)
+                    pos = (10, h - 10)
+                    cv2.putText(frame_res, self.ip_display, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                    cv2.putText(frame_res, self.ip_display, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+                    rgb = cv2.cvtColor(frame_res, cv2.COLOR_BGR2RGB)
+                    pil_img = Image.fromarray(rgb)
+                    with self.lock:
+                        self.frame_pil = pil_img
+                        self.frame_novo = True
+                except:
+                    time.sleep(0.01)
             else:
                 time.sleep(0.01)
 
@@ -61,7 +75,7 @@ class CameraHandler:
         with self.lock:
             if self.frame_novo:
                 self.frame_novo = False
-                return self.frame_atual
+                return self.frame_pil
             return None
 
     def parar(self):
@@ -443,7 +457,7 @@ class CentralMonitoramento(ctk.CTk):
                     self.grid_cameras[target_idx], self.grid_cameras[source_idx]
                 for idx in [source_idx, target_idx]:
                     if self.grid_cameras[idx] == "0.0.0.0":
-                        try: self.slot_labels[idx].configure(image="", text=f"Espaço {idx+1}")
+                        try: self.slot_labels[idx].configure(image=None, text=f"Espaço {idx+1}")
                         except: pass
                         self.slot_labels[idx].image = None
                 self.salvar_grid()
@@ -556,7 +570,7 @@ class CentralMonitoramento(ctk.CTk):
         if not (0 <= idx < 20): return
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
-        try: self.slot_labels[idx].configure(image="")
+        try: self.slot_labels[idx].configure(image=None)
         except: pass
         try:
             if ip == "0.0.0.0": self.slot_labels[idx].configure(text=f"Espaço {idx+1}")
@@ -639,43 +653,60 @@ class CentralMonitoramento(ctk.CTk):
                     sucesso, camera_obj, ip = self.fila_conexoes.get_nowait()
                     self._pos_conexao(sucesso, camera_obj, ip)
                 except: pass
+
             agora = time.time()
+            scaling = self._get_window_scaling()
             indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
-            frames_cache = {}
+
+            # Cache de CTKImages para evitar recriação se o mesmo IP aparecer em múltiplos slots
+            images_cache = {}
+
             for i in indices:
                 ip = self.grid_cameras[i]
                 if not ip or ip == "0.0.0.0": continue
+
                 if ip in self.cooldown_conexoes:
                     if agora - self.cooldown_conexoes[ip] < 10:
                         try: self.slot_labels[i].configure(text=f"ERRO AO CONECTAR\n{ip}")
                         except: pass
                         continue
-                if ip not in frames_cache:
-                    handler = self.camera_handlers.get(ip)
-                    if handler is None:
-                        self.iniciar_conexao_assincrona(ip, 102)
-                        frames_cache[ip] = None
-                        continue
-                    if handler == "CONECTANDO":
-                        frames_cache[ip] = None
-                        continue
-                    frames_cache[ip] = handler.pegar_frame()
-                frame = frames_cache[ip]
-                if frame is not None:
-                    try:
-                        w = self.slot_frames[i].winfo_width()
-                        h = self.slot_frames[i].winfo_height()
-                        w = max(10, w - 6); h = max(10, h - 6)
-                        frame_resized = cv2.resize(frame, (w, h), interpolation=cv2.INTER_NEAREST)
-                        pos = (10, h - 10)
-                        cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                        cv2.putText(frame_resized, ip, pos, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-                        pil_img = Image.fromarray(cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB))
-                        ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w, h))
+
+                handler = self.camera_handlers.get(ip)
+                if handler is None:
+                    self.iniciar_conexao_assincrona(ip, 102)
+                    continue
+                if handler == "CONECTANDO":
+                    continue
+
+                try:
+                    w_fisico = self.slot_frames[i].winfo_width()
+                    h_fisico = self.slot_frames[i].winfo_height()
+                    w_fisico = max(10, w_fisico - 6)
+                    h_fisico = max(10, h_fisico - 6)
+
+                    # Atualiza parâmetros do handler
+                    handler.tamanho_alvo = (w_fisico, h_fisico)
+                    handler.interpolation = cv2.INTER_LINEAR if self.slot_maximized == i else cv2.INTER_NEAREST
+
+                    # Dimensões lógicas para o CTKImage (corrige o "zoom")
+                    w_logico = w_fisico / scaling
+                    h_logico = h_fisico / scaling
+
+                    cache_key = (ip, w_fisico, h_fisico)
+                    if cache_key not in images_cache:
+                        pil_img = handler.pegar_frame()
+                        if pil_img:
+                            images_cache[cache_key] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img,
+                                                                   size=(w_logico, h_logico))
+                        else:
+                            images_cache[cache_key] = None
+
+                    ctk_img = images_cache[cache_key]
+                    if ctk_img:
                         try: self.slot_labels[i].configure(image=ctk_img, text="")
                         except: pass
                         self.slot_labels[i].image = ctk_img
-                    except: pass
+                except: pass
 
             if self.btn_expandir.winfo_ismapped():
                 self.btn_expandir.lift()
