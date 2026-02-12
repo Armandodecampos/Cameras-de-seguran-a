@@ -446,7 +446,6 @@ class CentralMonitoramento(ctk.CTk):
             
             # Se for apenas um clique (distância pequena) ou soltou fora
             if dist < 15 or target_idx is None:
-                # Mantém a seleção no slot clicado
                 return
             
             # Se arrastou para o mesmo slot
@@ -456,15 +455,16 @@ class CentralMonitoramento(ctk.CTk):
             # Lógica de Troca (Swap)
             if 0 <= source_idx < 20 and 0 <= target_idx < 20:
                 print(f"Trocando câmera {source_idx+1} com {target_idx+1}")
-                self.grid_cameras[source_idx], self.grid_cameras[target_idx] = \
-                    self.grid_cameras[target_idx], self.grid_cameras[source_idx]
+                ip_src = self.grid_cameras[source_idx]
+                ip_tgt = self.grid_cameras[target_idx]
                 
-                # CORREÇÃO: Não resetamos a imagem explicitamente para "MUDANDO...".
-                # Apenas salvamos o grid e deixamos o loop_exibicao atualizar naturalmente
-                # no próximo frame. Isso evita o estado "preso" sem imagem.
+                # Atualiza ambos os slots para garantir consistência visual
+                self.atribuir_ip_ao_slot(source_idx, ip_tgt, atualizar_ui=False)
+                self.atribuir_ip_ao_slot(target_idx, ip_src, atualizar_ui=False)
                 
                 self.salvar_grid()
                 self.selecionar_slot(target_idx)
+                self.update_idletasks()
                 
         finally:
             self.press_data = None
@@ -580,17 +580,18 @@ class CentralMonitoramento(ctk.CTk):
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
         
-        # Limpa visualmente primeiro para garantir que o usuário veja a mudança
-        self.slot_labels[idx].configure(image=None)
-        self.slot_labels[idx].image = None
-        
-        if ip == "0.0.0.0":
-            self.slot_labels[idx].configure(text=f"Espaço {idx+1}")
-        else:
-            self.slot_labels[idx].configure(text=f"CONECTANDO...\n{ip}")
+        # Reset de segurança para garantir limpeza do slot
+        try:
+            self.slot_labels[idx].image = None
+            if not ip or ip == "0.0.0.0":
+                self.slot_labels[idx].configure(image=None, text=f"Espaço {idx+1}")
+            else:
+                self.slot_labels[idx].configure(image=None, text=f"CONECTANDO...\n{ip}")
+        except Exception as e:
+            print(f"Erro visual ao limpar slot {idx}: {e}")
             
         if atualizar_ui:
-            self.update_idletasks() # Força atualização da UI apenas se solicitado
+            self.update_idletasks()
         
         self.salvar_grid()
         
@@ -676,14 +677,20 @@ class CentralMonitoramento(ctk.CTk):
 
             agora = time.time()
             scaling = self._get_window_scaling()
-            indices = [self.slot_maximized] if self.slot_maximized is not None else range(20)
+            indices_trabalho = [self.slot_maximized] if self.slot_maximized is not None else range(20)
 
-            # Cache temporário para o loop atual
-            current_loop_images = {}
-
-            for i in indices:
+            for i in range(20):
                 ip = self.grid_cameras[i]
-                if not ip or ip == "0.0.0.0": continue
+
+                # Caso o slot deva estar vazio ou não esteja no foco de atualização
+                if not ip or ip == "0.0.0.0" or i not in indices_trabalho:
+                    # Segurança: se o slot deveria estar vazio mas ainda tem imagem (ex: após swap)
+                    if ip == "0.0.0.0" and self.slot_labels[i].cget("text") == "":
+                        try:
+                            self.slot_labels[i].configure(image=None, text=f"Espaço {i+1}")
+                            self.slot_labels[i].image = None
+                        except: pass
+                    continue
 
                 # Verifica erro de conexão
                 if ip in self.cooldown_conexoes:
@@ -703,7 +710,7 @@ class CentralMonitoramento(ctk.CTk):
                     # Calcula tamanhos
                     w_fisico = self.slot_frames[i].winfo_width()
                     h_fisico = self.slot_frames[i].winfo_height()
-                    w_fisico = int(max(10, w_fisico - 6)) # Garante inteiros
+                    w_fisico = int(max(10, w_fisico - 6))
                     h_fisico = int(max(10, h_fisico - 6))
 
                     handler.tamanho_alvo = (w_fisico, h_fisico)
@@ -712,25 +719,20 @@ class CentralMonitoramento(ctk.CTk):
                     w_logico = w_fisico / scaling
                     h_logico = h_fisico / scaling
 
-                    # Pega frame (agora retorna sempre o último frame válido)
                     pil_img = handler.pegar_frame()
-                    
                     if pil_img:
                         ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(w_logico, h_logico))
-                        
                         try: 
-                            # IMPORTANTE: Força o text="" para remover "Espaço 19"
+                            # IMPORTANTE: Mantém a referência ANTES da configuração para evitar GC
+                            self.slot_labels[i].image = ctk_img
                             self.slot_labels[i].configure(image=ctk_img, text="")
-                        except: pass
-                        
-                        # Segura referência para não ser deletado pelo Garbage Collector
-                        self.slot_labels[i].image = ctk_img
+                        except:
+                            # Se falhar o configure, removemos a referência para não acumular lixo
+                            self.slot_labels[i].image = None
                     else:
-                        # Se conectou mas não veio frame ainda
-                        # self.slot_labels[i].configure(text="BUFFERIZANDO...")
                         pass
 
-                except Exception as e: 
+                except Exception as e:
                     # print(f"Erro render slot {i}: {e}")
                     pass
 
@@ -842,13 +844,16 @@ class CentralMonitoramento(ctk.CTk):
     def aplicar_preset(self, nome):
         preset = self.presets.get(nome)
         if preset:
-            # Otimização: Não atualiza a UI a cada slot para evitar travamento
-            for i, ip in enumerate(preset):
-                if i < 20:
-                    self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False)
+            # Força atualização em todos os 20 espaços para garantir limpeza
+            for i in range(20):
+                ip = preset[i] if i < len(preset) else "0.0.0.0"
+                self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False)
+
+            # Se estava com algum slot maximizado, restaura o grid para ver o preset completo
+            if self.slot_maximized is not None:
+                self.restaurar_grid()
             
             self.selecionar_slot(self.slot_selecionado)
-            # REMOVIDO: messagebox que bloqueia a interface e causa sensação de erro/travamento
             print(f"Predefinição '{nome}' aplicada!")
             
             # Força atualização visual única no final
