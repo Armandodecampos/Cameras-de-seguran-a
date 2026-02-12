@@ -31,7 +31,7 @@ class CameraHandler:
 
     def iniciar(self):
         try:
-            print(f"Tentando conectar em: {self.ip_display}...")
+            # print(f"Tentando conectar em: {self.ip_display}...")
             self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
 
             # Tenta forçar timeout de 5s na conexão se o driver e a versão do cv2 suportarem
@@ -48,7 +48,7 @@ class CameraHandler:
                 self.rodando = True
                 self.conectado = True
                 threading.Thread(target=self.loop_leitura, daemon=True).start()
-                print(f"Conectado com sucesso: {self.ip_display}")
+                # print(f"Conectado com sucesso: {self.ip_display}")
                 return True
             else:
                 print(f"Falha ao abrir stream: {self.ip_display}")
@@ -89,7 +89,7 @@ class CameraHandler:
             else:
                 consecutive_failures += 1
                 if consecutive_failures > 100: # ~1-2 segundos sem frames
-                    print(f"LOG: Camera {self.ip_display} parou de enviar frames.")
+                    # print(f"LOG: Camera {self.ip_display} parou de enviar frames.")
                     break
                 time.sleep(0.01)
 
@@ -223,8 +223,9 @@ class CentralMonitoramento(ctk.CTk):
         self.btn_toggle_sidebar = ctk.CTkButton(
             self, 
             text="<", 
-            width=20, 
+            width=40,
             corner_radius=0,
+            font=("Roboto", 16, "bold"),
             fg_color=self.BG_PANEL, 
             hover_color=self.ACCENT_WINE,
             command=self.toggle_sidebar
@@ -337,7 +338,7 @@ class CentralMonitoramento(ctk.CTk):
                     # (Embora ips_em_fila já ajude a evitar duplicados na fila)
 
                     # Inicia a conexão real
-                    print(f"LOG: Iniciando thread de conexão para {ip} (Queue size: {self.fila_pendente_conexoes.qsize()})")
+                    # print(f"LOG: Iniciando thread de conexão para {ip} (Queue size: {self.fila_pendente_conexoes.qsize()})")
                     threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
                     # Pausa menor para maior agilidade, mas ainda staggered
@@ -515,7 +516,7 @@ class CentralMonitoramento(ctk.CTk):
 
             # Lógica de Troca (Swap)
             if 0 <= source_idx < 20 and 0 <= target_idx < 20:
-                print(f"Trocando câmera {source_idx+1} com {target_idx+1}")
+                # print(f"Trocando câmera {source_idx+1} com {target_idx+1}")
                 ip_src = self.grid_cameras[source_idx]
                 ip_tgt = self.grid_cameras[target_idx]
                 
@@ -636,7 +637,7 @@ class CentralMonitoramento(ctk.CTk):
 
     def recriar_label_slot(self, idx):
         """Recria o CTkLabel de um slot para limpar estados corrompidos do Tcl/Tkinter."""
-        print(f"LOG: Recriando Label do slot {idx}")
+        # print(f"LOG: Recriando Label do slot {idx}")
         try:
             # Pega o frame pai
             frm = self.slot_frames[idx]
@@ -663,7 +664,7 @@ class CentralMonitoramento(ctk.CTk):
 
     def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True):
         if not (0 <= idx < 20): return
-        print(f"LOG: Atribuindo {ip} ao slot {idx} (UI={atualizar_ui}, Con={gerenciar_conexoes})")
+        # print(f"LOG: Atribuindo {ip} ao slot {idx} (UI={atualizar_ui}, Con={gerenciar_conexoes})")
         
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
@@ -678,7 +679,7 @@ class CentralMonitoramento(ctk.CTk):
             if not ip or ip == "0.0.0.0":
                 self.slot_ctk_images[idx] = None
         except Exception as e:
-            print(f"DEBUG: Falha no configure do slot {idx}, tentando recriar label. Erro: {e}")
+            # print(f"DEBUG: Falha no configure do slot {idx}, tentando recriar label. Erro: {e}")
             lbl = self.recriar_label_slot(idx)
             if lbl:
                 try: lbl.configure(text=txt)
@@ -759,11 +760,11 @@ class CentralMonitoramento(ctk.CTk):
 
     def _pos_conexao(self, sucesso, camera_obj, ip):
         if sucesso:
-            print(f"LOG: Conexão bem-sucedida com {ip}")
+            # print(f"LOG: Conexão bem-sucedida com {ip}")
             self.camera_handlers[ip] = camera_obj
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
         else:
-            print(f"LOG: Falha na conexão final com {ip}")
+            # print(f"LOG: Falha na conexão final com {ip}")
             if ip in self.camera_handlers: del self.camera_handlers[ip]
             self.cooldown_conexoes[ip] = time.time()
             for i, grid_ip in enumerate(self.grid_cameras):
@@ -844,7 +845,7 @@ class CentralMonitoramento(ctk.CTk):
                             # Mas mantendo cache para não explodir pyimages
                             if self.slot_ctk_images[i] is None:
                                 self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
-                                print(f"DEBUG: Slot {i} ({ip}) - Primeiro Frame ({pil_img.size})")
+                                # print(f"DEBUG: Slot {i} ({ip}) - Primeiro Frame ({pil_img.size})")
                             else:
                                 # Tenta atualizar o objeto existente
                                 self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
@@ -854,13 +855,14 @@ class CentralMonitoramento(ctk.CTk):
                                 self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
                                 self.slot_labels[i].image = self.slot_ctk_images[i]
                         except Exception as e:
-                            print(f"DEBUG: Erro ao renderizar frame no slot {i}: {e}")
+                            # print(f"DEBUG: Erro ao renderizar frame no slot {i}: {e}")
                             # Se falhar muito, tentamos recriar o cache do slot
                             self.slot_ctk_images[i] = None
                     else:
                         # Stream aberto mas sem frames (pode estar carregando ou com erro de codec)
-                        if i % 100 == 0: # Log esparso para não inundar
-                            print(f"DEBUG: Slot {i} ({ip}) - Aguardando frame válido...")
+                        # if i % 100 == 0: # Log esparso para não inundar
+                        #     print(f"DEBUG: Slot {i} ({ip}) - Aguardando frame válido...")
+                        pass
 
                 except Exception as e:
                     # print(f"Erro render slot {i}: {e}")
@@ -975,7 +977,7 @@ class CentralMonitoramento(ctk.CTk):
         preset = self.presets.get(nome)
         if not preset: return
 
-        print(f"Aplicando predefinição: {nome}")
+        # print(f"Aplicando predefinição: {nome}")
 
         # 1. Mapeia IPs atuais para saber o que fechar depois
         ips_antigos = set(ip for ip in self.grid_cameras if ip and ip != "0.0.0.0")
@@ -1009,7 +1011,7 @@ class CentralMonitoramento(ctk.CTk):
 
         self.selecionar_slot(self.slot_selecionado)
         self.update_idletasks()
-        print(f"Predefinição '{nome}' aplicada!")
+        # print(f"Predefinição '{nome}' aplicada!")
 
     def deletar_preset(self, nome):
         if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
