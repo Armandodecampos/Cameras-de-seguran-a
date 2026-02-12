@@ -155,6 +155,9 @@ class CentralMonitoramento(ctk.CTk):
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None
         
+        # Cache persistente de CTkImage por slot para evitar "pyimage" explosion
+        self.slot_ctk_images = [None] * 20
+
         # Controle da Sidebar
         self.sidebar_visible = True
 
@@ -317,6 +320,7 @@ class CentralMonitoramento(ctk.CTk):
                     # (Embora ips_em_fila já ajude a evitar duplicados na fila)
 
                     # Inicia a conexão real
+                    print(f"LOG: Iniciando thread de conexão para {ip} (Queue size: {self.fila_pendente_conexoes.qsize()})")
                     threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
                     # Pausa menor para maior agilidade, mas ainda staggered
@@ -615,22 +619,31 @@ class CentralMonitoramento(ctk.CTk):
 
     def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True):
         if not (0 <= idx < 20): return
-        print(f"Atribuindo IP {ip} ao slot {idx}")
+        print(f"LOG: Atribuindo {ip} ao slot {idx} (UI={atualizar_ui}, Con={gerenciar_conexoes})")
         
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
         
-        # 1. Limpeza visual imediata
+        # 1. Limpeza visual robusta (separada em etapas para evitar que erros de imagem bloqueiem o texto)
         try:
-            # IMPORTANTE: Primeiro configure image=None para o Tkinter parar de usar a imagem
+            # Tenta desvincular a imagem do widget
             self.slot_labels[idx].configure(image=None)
-            # Só depois removemos a referência do Python
-            self.slot_labels[idx].image = None
+        except Exception as e:
+            print(f"DEBUG: Erro ao remover imagem do slot {idx} (pode ser ignorado): {e}")
 
+        try:
+            # Remove a referência do Python e o cache persistente se for reset total
+            self.slot_labels[idx].image = None
+            if not ip or ip == "0.0.0.0":
+                self.slot_ctk_images[idx] = None
+        except: pass
+
+        try:
+            # Atualiza o texto SEMPRE, independente do sucesso da limpeza de imagem
             txt = f"Espaço {idx+1}" if (not ip or ip == "0.0.0.0") else f"CONECTANDO...\n{ip}"
             self.slot_labels[idx].configure(text=txt)
         except Exception as e:
-            print(f"Erro visual ao limpar slot {idx}: {e}")
+            print(f"ERRO CRÍTICO: Falha ao atualizar texto do slot {idx}: {e}")
             
         if atualizar_ui:
             self.update_idletasks()
@@ -707,14 +720,19 @@ class CentralMonitoramento(ctk.CTk):
 
     def _pos_conexao(self, sucesso, camera_obj, ip):
         if sucesso:
+            print(f"LOG: Conexão bem-sucedida com {ip}")
             self.camera_handlers[ip] = camera_obj
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
         else:
+            print(f"LOG: Falha na conexão final com {ip}")
             if ip in self.camera_handlers: del self.camera_handlers[ip]
             self.cooldown_conexoes[ip] = time.time()
             for i, grid_ip in enumerate(self.grid_cameras):
                 if grid_ip == ip:
-                    try: self.slot_labels[i].configure(text=f"ERRO DE CONEXÃO\n{ip}")
+                    try:
+                        self.slot_labels[i].configure(image=None, text=f"FALHA CONEXÃO\n{ip}")
+                        self.slot_labels[i].image = None
+                        self.slot_ctk_images[i] = None
                     except: pass
         self.atualizar_botoes_controle()
 
@@ -731,19 +749,22 @@ class CentralMonitoramento(ctk.CTk):
             scaling = self._get_window_scaling()
             indices_trabalho = [self.slot_maximized] if self.slot_maximized is not None else range(20)
 
-            # Cache de imagens para o loop ATUAL para evitar criar 20 CTkImages por IP
-            cache_ctk_imgs = {}
+            # Mapeia quais IPs estão sendo processados para compartilhar a CTkImage se possível
+            current_ips_pil = {}
 
             for i in range(20):
                 ip = self.grid_cameras[i]
 
                 # Caso o slot deva estar vazio ou não esteja no foco de atualização
                 if not ip or ip == "0.0.0.0" or i not in indices_trabalho:
-                    # Segurança: se o slot deveria estar vazio mas ainda tem imagem (ex: após swap)
-                    if ip == "0.0.0.0" and self.slot_labels[i].cget("image") is not None:
+                    # Segurança: se o slot deveria estar vazio mas ainda tem imagem
+                    if ip == "0.0.0.0":
                         try:
-                            self.slot_labels[i].configure(image=None, text=f"Espaço {i+1}")
-                            self.slot_labels[i].image = None
+                            # Verificamos apenas o Python local para ser rápido
+                            if self.slot_labels[i].image is not None:
+                                self.slot_labels[i].configure(image=None, text=f"Espaço {i+1}")
+                                self.slot_labels[i].image = None
+                                self.slot_ctk_images[i] = None
                         except: pass
                     continue
 
@@ -751,9 +772,10 @@ class CentralMonitoramento(ctk.CTk):
                 if ip in self.cooldown_conexoes:
                     if agora - self.cooldown_conexoes[ip] < 10:
                         try:
-                            if self.slot_labels[i].cget("image") is not None:
+                            if self.slot_labels[i].image is not None:
                                 self.slot_labels[i].configure(text=f"FALHA CONEXÃO\n{ip}", image=None)
                                 self.slot_labels[i].image = None
+                                self.slot_ctk_images[i] = None
                         except: pass
                         continue
 
@@ -776,27 +798,24 @@ class CentralMonitoramento(ctk.CTk):
 
                     pil_img = handler.pegar_frame()
                     if pil_img:
-                        # Chave do cache: IP + Dimensões (pois CTkImage precisa do size fixo)
-                        cache_key = (ip, wf, hf)
+                        wl, hl = wf / scaling, hf / scaling
 
-                        if cache_key in cache_ctk_imgs:
-                            ctk_img = cache_ctk_imgs[cache_key]
+                        # Lógica de Cache Persistente: Reaproveita o CTkImage do slot se as dimensões forem iguais
+                        if self.slot_ctk_images[i] is None:
+                            self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                            self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
+                            self.slot_labels[i].image = self.slot_ctk_images[i]
+                            print(f"DEBUG: Criado novo CTkImage para slot {i} ({ip})")
                         else:
-                            wl = wf / scaling
-                            hl = hf / scaling
-                            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
-                            cache_ctk_imgs[cache_key] = ctk_img
+                            # Se as dimensões mudaram, atualizamos o size também
+                            self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
 
-                        # Só atualiza se for uma imagem diferente (opcional, mas seguro)
-                        if self.slot_labels[i].image != ctk_img:
-                            try:
-                                # Primeiro configura image=None se houver mudança de imagem radical?
-                                # Na verdade, CTkLabel lida bem se trocarmos direto, DESDE que mantenhamos a ref.
-                                self.slot_labels[i].configure(image=ctk_img, text="")
-                                self.slot_labels[i].image = ctk_img
-                            except:
-                                self.slot_labels[i].image = None
+                            # Forçamos a atualização visual se o label perdeu a referência (ex: após swap)
+                            if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
+                                self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
+                                self.slot_labels[i].image = self.slot_ctk_images[i]
                     else:
+                        # Stream aberto mas sem frames ainda
                         pass
 
                 except Exception as e:
