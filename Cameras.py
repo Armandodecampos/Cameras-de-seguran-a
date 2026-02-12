@@ -225,12 +225,13 @@ class CentralMonitoramento(ctk.CTk):
         # 2. Botão Toggle Sidebar (Coluna 1)
         self.btn_toggle_sidebar = ctk.CTkButton(
             self, 
-            text="<", 
+            text="◀",
             width=40,
             corner_radius=0,
-            font=("Roboto", 16, "bold"),
+            font=("Roboto", 24, "bold"),
             fg_color=self.BG_PANEL, 
             hover_color=self.ACCENT_WINE,
+            text_color=self.ACCENT_RED,
             command=self.toggle_sidebar
         )
         self.btn_toggle_sidebar.grid(row=0, column=1, sticky="ns", padx=0, pady=0)
@@ -367,11 +368,11 @@ class CentralMonitoramento(ctk.CTk):
     def toggle_sidebar(self):
         if self.sidebar_visible:
             self.sidebar.grid_forget()
-            self.btn_toggle_sidebar.configure(text=">")
+            self.btn_toggle_sidebar.configure(text="▶")
             self.sidebar_visible = False
         else:
             self.sidebar.grid(row=0, column=0, sticky="nsew")
-            self.btn_toggle_sidebar.configure(text="<")
+            self.btn_toggle_sidebar.configure(text="◀")
             self.sidebar_visible = True
 
     # --- LÓGICA PTZ ---
