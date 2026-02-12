@@ -31,7 +31,7 @@ class CameraHandler:
 
     def iniciar(self):
         try:
-            # print(f"Tentando conectar em: {self.ip_display}...")
+            print(f"Tentando conectar em: {self.ip_display}...")
             self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
 
             # Tenta forçar timeout de 5s na conexão se o driver e a versão do cv2 suportarem
@@ -48,7 +48,7 @@ class CameraHandler:
                 self.rodando = True
                 self.conectado = True
                 threading.Thread(target=self.loop_leitura, daemon=True).start()
-                # print(f"Conectado com sucesso: {self.ip_display}")
+                print(f"Conectado com sucesso: {self.ip_display}")
                 return True
             else:
                 print(f"Falha ao abrir stream: {self.ip_display}")
@@ -151,12 +151,6 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_janela = os.path.join(user_dir, "config_janela_abi.json")
         self.arquivo_presets = os.path.join(user_dir, "presets_grid_abi.json")
 
-        self.carregar_posicao_janela()
-        self.presets = self.carregar_presets()
-        self.ips_unicos = self.gerar_lista_ips()
-        self.dados_cameras = self.carregar_config()
-        self.grid_cameras = self.carregar_grid()
-        
         self.botoes_referencia = {}
         self.ip_selecionado = None
         self.preset_widgets = {}
@@ -172,6 +166,12 @@ class CentralMonitoramento(ctk.CTk):
         self.tecla_pressionada = None
         self.ultimo_preset = None
         self.aba_ativa = "Câmeras"
+
+        self.carregar_posicao_janela()
+        self.presets = self.carregar_presets()
+        self.ips_unicos = self.gerar_lista_ips()
+        self.dados_cameras = self.carregar_config()
+        self.grid_cameras = self.carregar_grid()
 
         # Cache persistente de CTkImage por slot para evitar "pyimage" explosion
         self.slot_ctk_images = [None] * 20
@@ -301,7 +301,7 @@ class CentralMonitoramento(ctk.CTk):
             if ip and ip != "0.0.0.0": 
                 self.slot_labels[i].configure(text=f"AGUARDANDO\n{ip}")
 
-        self.selecionar_slot(0)
+        self.selecionar_slot(self.slot_selecionado)
         self.restaurar_grid()
         self.alternar_todos_streams()
         
@@ -478,6 +478,7 @@ class CentralMonitoramento(ctk.CTk):
                     if geom: self.geometry(geom)
                     self.aba_ativa = dados.get("active_tab", "Câmeras")
                     self.ultimo_preset = dados.get("last_preset")
+                    self.slot_selecionado = dados.get("slot_selecionado", 0)
             except Exception as e: print(f"Erro ao carregar janela: {e}")
 
     def ao_fechar(self):
@@ -486,7 +487,8 @@ class CentralMonitoramento(ctk.CTk):
                 dados = {
                     "geometry": self.geometry(),
                     "active_tab": self.tabview.get(),
-                    "last_preset": self.ultimo_preset
+                    "last_preset": self.ultimo_preset,
+                    "slot_selecionado": self.slot_selecionado
                 }
                 with open(self.arquivo_janela, "w") as f: json.dump(dados, f)
         except Exception as e: print(f"Erro ao salvar janela: {e}")
@@ -531,11 +533,20 @@ class CentralMonitoramento(ctk.CTk):
 
             # Lógica de Troca (Swap)
             if 0 <= source_idx < 20 and 0 <= target_idx < 20:
-                # print(f"Trocando câmera {source_idx+1} com {target_idx+1}")
+                # Limpa preset ao trocar manualmente
+                if self.ultimo_preset:
+                    self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
+                    self.ultimo_preset = None
+
                 ip_src = self.grid_cameras[source_idx]
                 ip_tgt = self.grid_cameras[target_idx]
                 
-                # Atualiza ambos os slots para garantir consistência visual
+                # Atualiza a estrutura de dados primeiro para evitar que conexões
+                # ativas sejam fechadas durante a troca (swap)
+                self.grid_cameras[source_idx] = ip_tgt
+                self.grid_cameras[target_idx] = ip_src
+
+                # Agora atualiza visualmente e gerencia handlers se necessário
                 self.atribuir_ip_ao_slot(source_idx, ip_tgt, atualizar_ui=False)
                 self.atribuir_ip_ao_slot(target_idx, ip_src, atualizar_ui=False)
                 
@@ -609,6 +620,12 @@ class CentralMonitoramento(ctk.CTk):
         self.press_data = None
         idx = self.slot_selecionado
         self.atribuir_ip_ao_slot(idx, "0.0.0.0")
+
+        # Limpa preset ao remover manualmente
+        if self.ultimo_preset:
+            self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
+            self.ultimo_preset = None
+
         if self.ip_selecionado:
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
@@ -679,8 +696,13 @@ class CentralMonitoramento(ctk.CTk):
 
     def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True):
         if not (0 <= idx < 20): return
-        # print(f"LOG: Atribuindo {ip} ao slot {idx} (UI={atualizar_ui}, Con={gerenciar_conexoes})")
         
+        # Limpa preset ao atribuir manualmente (se for uma atribuição direta, não via aplicar_preset)
+        # Note: 'aplicar_preset' chama atribuir_ip_ao_slot com gerenciar_conexoes=False
+        if gerenciar_conexoes and self.ultimo_preset:
+            self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
+            self.ultimo_preset = None
+
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
         
@@ -691,10 +713,10 @@ class CentralMonitoramento(ctk.CTk):
             # Tenta configurar o label existente
             self.slot_labels[idx].configure(image=self.img_vazia, text=txt)
             self.slot_labels[idx].image = self.img_vazia
-            if not ip or ip == "0.0.0.0":
-                self.slot_ctk_images[idx] = None
+            # Limpa cache do slot para evitar fantasmas ou falhas de sincronia
+            self.slot_ctk_images[idx] = None
         except Exception as e:
-            # print(f"DEBUG: Falha no configure do slot {idx}, tentando recriar label. Erro: {e}")
+            print(f"Erro visual ao atualizar texto slot {idx}: {e}")
             lbl = self.recriar_label_slot(idx)
             if lbl:
                 try: lbl.configure(text=txt)
@@ -816,12 +838,14 @@ class CentralMonitoramento(ctk.CTk):
 
                 # Caso o slot deva estar vazio ou não esteja no foco de atualização
                 if not ip or ip == "0.0.0.0" or i not in indices_trabalho:
-                    # Segurança: se o slot deveria estar vazio mas ainda tem imagem
+                    # Segurança: se o slot deveria estar vazio, garante texto e imagem vazia
                     if ip == "0.0.0.0":
                         try:
-                            # Se o label não estiver mostrando a imagem vazia ou o texto correto, corrigimos
-                            if self.slot_labels[i].image != self.img_vazia:
-                                self.slot_labels[i].configure(image=self.img_vazia, text=f"Espaço {i+1}")
+                            target_text = f"Espaço {i+1}"
+                            # Verifica se precisa atualizar para evitar cintilação
+                            if (self.slot_labels[i].cget("text") != target_text or
+                                self.slot_labels[i].image != self.img_vazia):
+                                self.slot_labels[i].configure(image=self.img_vazia, text=target_text)
                                 self.slot_labels[i].image = self.img_vazia
                                 self.slot_ctk_images[i] = None
                         except: pass
@@ -995,6 +1019,9 @@ class CentralMonitoramento(ctk.CTk):
     def aplicar_preset(self, nome):
         preset = self.presets.get(nome)
         if not preset: return
+
+        # Limpa o cooldown para permitir reconexão imediata se for um preset
+        self.cooldown_conexoes.clear()
 
         # Gerencia cores na lista de presets
         if self.ultimo_preset:
