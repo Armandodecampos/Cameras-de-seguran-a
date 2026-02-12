@@ -34,9 +34,15 @@ class CameraHandler:
             print(f"Tentando conectar em: {self.ip_display}...")
             self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
 
-            # Tenta forçar timeout de 5s na conexão se o driver suportar
-            self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_USEC, 5000000)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            # Tenta forçar timeout de 5s na conexão se o driver e a versão do cv2 suportarem
+            if hasattr(cv2, 'CAP_PROP_OPEN_TIMEOUT_USEC'):
+                try: self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_USEC, 5000000)
+                except: pass
+
+            # Tenta definir buffer size de forma segura
+            if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
+                try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                except: pass
 
             if self.cap.isOpened():
                 self.rodando = True
