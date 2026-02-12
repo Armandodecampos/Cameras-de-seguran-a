@@ -33,6 +33,9 @@ class CameraHandler:
         try:
             print(f"Tentando conectar em: {self.ip_display}...")
             self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+
+            # Tenta forçar timeout de 5s na conexão se o driver suportar
+            self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_USEC, 5000000)
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
             if self.cap.isOpened():
@@ -49,9 +52,11 @@ class CameraHandler:
             return False
 
     def loop_leitura(self):
+        consecutive_failures = 0
         while self.rodando and self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
+                consecutive_failures = 0
                 try:
                     w, h = self.tamanho_alvo
                     # Garante que w e h sejam inteiros para evitar erro no resize
@@ -76,6 +81,10 @@ class CameraHandler:
                     # print(f"Erro processamento frame: {e}")
                     time.sleep(0.01)
             else:
+                consecutive_failures += 1
+                if consecutive_failures > 100: # ~1-2 segundos sem frames
+                    print(f"LOG: Camera {self.ip_display} parou de enviar frames.")
+                    break
                 time.sleep(0.01)
 
         if self.cap:
@@ -157,6 +166,8 @@ class CentralMonitoramento(ctk.CTk):
         
         # Cache persistente de CTkImage por slot para evitar "pyimage" explosion
         self.slot_ctk_images = [None] * 20
+        # Imagem 1x1 transparente para resets seguros
+        self.img_vazia = ctk.CTkImage(Image.new('RGBA', (1, 1), (0,0,0,0)), size=(1, 1))
 
         # Controle da Sidebar
         self.sidebar_visible = True
@@ -617,6 +628,33 @@ class CentralMonitoramento(ctk.CTk):
         else: self.maximizar_slot(self.slot_selecionado)
         self.atualizar_botoes_controle()
 
+    def recriar_label_slot(self, idx):
+        """Recria o CTkLabel de um slot para limpar estados corrompidos do Tcl/Tkinter."""
+        print(f"LOG: Recriando Label do slot {idx}")
+        try:
+            # Pega o frame pai
+            frm = self.slot_frames[idx]
+
+            # Destrói o label antigo
+            if self.slot_labels[idx]:
+                try: self.slot_labels[idx].destroy()
+                except: pass
+
+            # Cria o novo label
+            lbl = ctk.CTkLabel(frm, text=f"Espaço {idx+1}", corner_radius=0)
+            lbl.pack(expand=True, fill="both", padx=2, pady=2)
+
+            # Re-bind dos eventos
+            lbl.bind("<Button-1>", lambda e, x=idx: self.ao_pressionar_slot(e, x))
+            lbl.bind("<ButtonRelease-1>", lambda e, x=idx: self.ao_soltar_slot(e, x))
+
+            self.slot_labels[idx] = lbl
+            self.slot_ctk_images[idx] = None
+            return lbl
+        except Exception as e:
+            print(f"ERRO AO RECRIAR LABEL {idx}: {e}")
+            return None
+
     def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True):
         if not (0 <= idx < 20): return
         print(f"LOG: Atribuindo {ip} ao slot {idx} (UI={atualizar_ui}, Con={gerenciar_conexoes})")
@@ -624,26 +662,21 @@ class CentralMonitoramento(ctk.CTk):
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
         
-        # 1. Limpeza visual robusta (separada em etapas para evitar que erros de imagem bloqueiem o texto)
-        try:
-            # Tenta desvincular a imagem do widget
-            self.slot_labels[idx].configure(image=None)
-        except Exception as e:
-            print(f"DEBUG: Erro ao remover imagem do slot {idx} (pode ser ignorado): {e}")
+        # 1. Limpeza visual ultra-robusta
+        txt = f"Espaço {idx+1}" if (not ip or ip == "0.0.0.0") else f"CONECTANDO...\n{ip}"
 
         try:
-            # Remove a referência do Python e o cache persistente se for reset total
-            self.slot_labels[idx].image = None
+            # Tenta configurar o label existente
+            self.slot_labels[idx].configure(image=self.img_vazia, text=txt)
+            self.slot_labels[idx].image = self.img_vazia
             if not ip or ip == "0.0.0.0":
                 self.slot_ctk_images[idx] = None
-        except: pass
-
-        try:
-            # Atualiza o texto SEMPRE, independente do sucesso da limpeza de imagem
-            txt = f"Espaço {idx+1}" if (not ip or ip == "0.0.0.0") else f"CONECTANDO...\n{ip}"
-            self.slot_labels[idx].configure(text=txt)
         except Exception as e:
-            print(f"ERRO CRÍTICO: Falha ao atualizar texto do slot {idx}: {e}")
+            print(f"DEBUG: Falha no configure do slot {idx}, tentando recriar label. Erro: {e}")
+            lbl = self.recriar_label_slot(idx)
+            if lbl:
+                try: lbl.configure(text=txt)
+                except: pass
             
         if atualizar_ui:
             self.update_idletasks()
@@ -760,10 +793,10 @@ class CentralMonitoramento(ctk.CTk):
                     # Segurança: se o slot deveria estar vazio mas ainda tem imagem
                     if ip == "0.0.0.0":
                         try:
-                            # Verificamos apenas o Python local para ser rápido
-                            if self.slot_labels[i].image is not None:
-                                self.slot_labels[i].configure(image=None, text=f"Espaço {i+1}")
-                                self.slot_labels[i].image = None
+                            # Se o label não estiver mostrando a imagem vazia ou o texto correto, corrigimos
+                            if self.slot_labels[i].image != self.img_vazia:
+                                self.slot_labels[i].configure(image=self.img_vazia, text=f"Espaço {i+1}")
+                                self.slot_labels[i].image = self.img_vazia
                                 self.slot_ctk_images[i] = None
                         except: pass
                     continue
@@ -772,9 +805,9 @@ class CentralMonitoramento(ctk.CTk):
                 if ip in self.cooldown_conexoes:
                     if agora - self.cooldown_conexoes[ip] < 10:
                         try:
-                            if self.slot_labels[i].image is not None:
-                                self.slot_labels[i].configure(text=f"FALHA CONEXÃO\n{ip}", image=None)
-                                self.slot_labels[i].image = None
+                            if self.slot_labels[i].image != self.img_vazia:
+                                self.slot_labels[i].configure(image=self.img_vazia, text=f"FALHA CONEXÃO\n{ip}")
+                                self.slot_labels[i].image = self.img_vazia
                                 self.slot_ctk_images[i] = None
                         except: pass
                         continue
@@ -800,23 +833,28 @@ class CentralMonitoramento(ctk.CTk):
                     if pil_img:
                         wl, hl = wf / scaling, hf / scaling
 
-                        # Lógica de Cache Persistente: Reaproveita o CTkImage do slot se as dimensões forem iguais
-                        if self.slot_ctk_images[i] is None:
-                            self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
-                            self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
-                            self.slot_labels[i].image = self.slot_ctk_images[i]
-                            print(f"DEBUG: Criado novo CTkImage para slot {i} ({ip})")
-                        else:
-                            # Se as dimensões mudaram, atualizamos o size também
-                            self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                        try:
+                            # Abordagem de criação direta para garantir atualização (testando se resolve 'dark screen')
+                            # Mas mantendo cache para não explodir pyimages
+                            if self.slot_ctk_images[i] is None:
+                                self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                                print(f"DEBUG: Slot {i} ({ip}) - Primeiro Frame ({pil_img.size})")
+                            else:
+                                # Tenta atualizar o objeto existente
+                                self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
 
-                            # Forçamos a atualização visual se o label perdeu a referência (ex: após swap)
+                            # SEMPRE garante que o label está apontando para o objeto de cache e sem texto
                             if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
                                 self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
                                 self.slot_labels[i].image = self.slot_ctk_images[i]
+                        except Exception as e:
+                            print(f"DEBUG: Erro ao renderizar frame no slot {i}: {e}")
+                            # Se falhar muito, tentamos recriar o cache do slot
+                            self.slot_ctk_images[i] = None
                     else:
-                        # Stream aberto mas sem frames ainda
-                        pass
+                        # Stream aberto mas sem frames (pode estar carregando ou com erro de codec)
+                        if i % 100 == 0: # Log esparso para não inundar
+                            print(f"DEBUG: Slot {i} ({ip}) - Aguardando frame válido...")
 
                 except Exception as e:
                     # print(f"Erro render slot {i}: {e}")
