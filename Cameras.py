@@ -150,6 +150,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_selecionado = 0
         self.press_data = None
         self.fila_conexoes = queue.Queue()
+        self.fila_pendente_conexoes = queue.Queue()
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None
         
@@ -285,7 +286,39 @@ class CentralMonitoramento(ctk.CTk):
             pass # Ignora erro se não suportar zoomed (ex: Linux/Mac às vezes)
             
         self.atualizar_lista_presets_ui()
+
+        # Inicia thread de processamento de conexões staggered
+        threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
+
         self.loop_exibicao()
+
+    def _processar_fila_conexoes_pendentes(self):
+        while True:
+            try:
+                if not self.fila_pendente_conexoes.empty():
+                    ip, canal = self.fila_pendente_conexoes.get()
+
+                    # Verifica se o IP ainda está no grid
+                    if ip not in self.grid_cameras:
+                        if ip in self.camera_handlers and self.camera_handlers[ip] == "CONECTANDO":
+                            del self.camera_handlers[ip]
+                        continue
+
+                    # Verifica novamente se já não está rodando
+                    handler = self.camera_handlers.get(ip)
+                    if handler and handler != "CONECTANDO" and hasattr(handler, 'rodando') and handler.rodando:
+                        continue
+
+                    # Inicia a conexão real
+                    threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
+
+                    # Pequena pausa para não sobrecarregar o sistema/rede
+                    time.sleep(0.2)
+                else:
+                    time.sleep(0.1)
+            except Exception as e:
+                print(f"Erro no processador de conexões: {e}")
+                time.sleep(1)
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
     def toggle_sidebar(self):
@@ -582,11 +615,21 @@ class CentralMonitoramento(ctk.CTk):
         
         # Reset de segurança para garantir limpeza do slot
         try:
+            # Primeiro removemos a referência para garantir que não haverá novas atualizações do loop
             self.slot_labels[idx].image = None
+
+            # Tenta limpar o widget de forma segura
             if not ip or ip == "0.0.0.0":
-                self.slot_labels[idx].configure(image=None, text=f"Espaço {idx+1}")
+                txt = f"Espaço {idx+1}"
             else:
-                self.slot_labels[idx].configure(image=None, text=f"CONECTANDO...\n{ip}")
+                txt = f"CONECTANDO...\n{ip}"
+
+            # Usamos try interno para a configuração de imagem que é a que costuma falhar
+            try:
+                self.slot_labels[idx].configure(image=None, text=txt)
+            except:
+                # Se falhar com None, tenta apenas o texto para garantir o placeholder
+                self.slot_labels[idx].configure(text=txt)
         except Exception as e:
             print(f"Erro visual ao limpar slot {idx}: {e}")
             
@@ -632,15 +675,22 @@ class CentralMonitoramento(ctk.CTk):
     def iniciar_conexao_assincrona(self, ip, canal=102):
         if not ip or ip == "0.0.0.0": return
         agora = time.time()
+
+        # Respeita cooldown de falha
         if ip in self.cooldown_conexoes:
             if agora - self.cooldown_conexoes[ip] < 10: return
+
+        # Verifica se já está conectando ou rodando
         if ip in self.camera_handlers:
             handler = self.camera_handlers[ip]
             if handler == "CONECTANDO": return
             if hasattr(handler, 'rodando') and handler.rodando: return
             del self.camera_handlers[ip]
+
+        # Marca como conectando para evitar que o loop_exibicao peça nova conexão
         self.camera_handlers[ip] = "CONECTANDO"
-        threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
+        # Adiciona na fila para processamento staggered
+        self.fila_pendente_conexoes.put((ip, canal))
 
     def _thread_conectar(self, ip, canal):
         try:
