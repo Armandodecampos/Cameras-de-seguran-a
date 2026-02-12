@@ -159,6 +159,7 @@ class CentralMonitoramento(ctk.CTk):
         
         self.botoes_referencia = {}
         self.ip_selecionado = None
+        self.preset_widgets = {}
         self.camera_handlers = {}
         self.em_tela_cheia = False
         self.slot_maximized = None
@@ -169,7 +170,9 @@ class CentralMonitoramento(ctk.CTk):
         self.ips_em_fila = set()
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None
-        
+        self.ultimo_preset = None
+        self.aba_ativa = "Câmeras"
+
         # Cache persistente de CTkImage por slot para evitar "pyimage" explosion
         self.slot_ctk_images = [None] * 20
         # Imagem 1x1 transparente para resets seguros
@@ -308,6 +311,12 @@ class CentralMonitoramento(ctk.CTk):
             pass # Ignora erro se não suportar zoomed (ex: Linux/Mac às vezes)
             
         self.atualizar_lista_presets_ui()
+
+        # Restaura estado da interface (aba ativa)
+        try:
+            if self.aba_ativa in ["Câmeras", "Predefinições"]:
+                self.tabview.set(self.aba_ativa)
+        except: pass
 
         # Inicia thread de processamento de conexões staggered
         threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
@@ -467,12 +476,18 @@ class CentralMonitoramento(ctk.CTk):
                     dados = json.load(f)
                     geom = dados.get("geometry")
                     if geom: self.geometry(geom)
+                    self.aba_ativa = dados.get("active_tab", "Câmeras")
+                    self.ultimo_preset = dados.get("last_preset")
             except Exception as e: print(f"Erro ao carregar janela: {e}")
 
     def ao_fechar(self):
         try:
             if not self.em_tela_cheia:
-                dados = {"geometry": self.geometry()}
+                dados = {
+                    "geometry": self.geometry(),
+                    "active_tab": self.tabview.get(),
+                    "last_preset": self.ultimo_preset
+                }
                 with open(self.arquivo_janela, "w") as f: json.dump(dados, f)
         except Exception as e: print(f"Erro ao salvar janela: {e}")
         self.destroy()
@@ -710,6 +725,10 @@ class CentralMonitoramento(ctk.CTk):
 
     def pintar_botao(self, ip, cor):
         if ip and ip in self.botoes_referencia: self.botoes_referencia[ip]['frame'].configure(fg_color=cor)
+
+    def pintar_preset(self, nome, cor):
+        if nome and nome in self.preset_widgets:
+            self.preset_widgets[nome].configure(fg_color=cor)
 
     def trocar_qualidade(self, ip, novo_canal):
         if not ip: return
@@ -977,6 +996,12 @@ class CentralMonitoramento(ctk.CTk):
         preset = self.presets.get(nome)
         if not preset: return
 
+        # Gerencia cores na lista de presets
+        if self.ultimo_preset:
+            self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
+        self.ultimo_preset = nome
+        self.pintar_preset(nome, self.ACCENT_WINE)
+
         # print(f"Aplicando predefinição: {nome}")
 
         # 1. Mapeia IPs atuais para saber o que fechar depois
@@ -1033,8 +1058,11 @@ class CentralMonitoramento(ctk.CTk):
     def atualizar_lista_presets_ui(self):
         for child in self.scroll_presets.winfo_children():
             child.destroy()
+        self.preset_widgets = {}
+
         for nome in sorted(self.presets.keys()):
-            frm = ctk.CTkFrame(self.scroll_presets, height=50, fg_color=self.BG_SIDEBAR, border_width=1, border_color=self.GRAY_DARK)
+            cor = self.ACCENT_WINE if nome == self.ultimo_preset else self.BG_SIDEBAR
+            frm = ctk.CTkFrame(self.scroll_presets, height=50, fg_color=cor, border_width=1, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2, padx=2)
             frm.pack_propagate(False)
             
@@ -1053,6 +1081,8 @@ class CentralMonitoramento(ctk.CTk):
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
                                      hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
             btn_del.pack(side="right", padx=5)
+
+            self.preset_widgets[nome] = frm
 
 if __name__ == "__main__":
     app = CentralMonitoramento()
