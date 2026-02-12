@@ -303,6 +303,10 @@ class CentralMonitoramento(ctk.CTk):
 
         self.selecionar_slot(self.slot_selecionado)
         self.restaurar_grid()
+
+        # Inicia thread de processamento de conexões staggered
+        threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
+
         self.alternar_todos_streams()
         
         try:
@@ -318,8 +322,9 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Inicia thread de processamento de conexões staggered
-        threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
+        # Aplica automaticamente o último preset se existir
+        if self.ultimo_preset and self.ultimo_preset in self.presets:
+            self.after(500, lambda: self.aplicar_preset(self.ultimo_preset))
 
         self.loop_exibicao()
 
