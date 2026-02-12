@@ -150,8 +150,12 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_selecionado = 0
         self.press_data = None
         self.fila_conexoes = queue.Queue()
+        self.fila_pendente_conexoes = queue.Queue()
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None
+
+        # Thread para processar fila de conexões pendentes (stagger)
+        threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
         
         # Controle da Sidebar
         self.sidebar_visible = True
@@ -573,7 +577,7 @@ class CentralMonitoramento(ctk.CTk):
         else: self.maximizar_slot(self.slot_selecionado)
         self.atualizar_botoes_controle()
 
-    def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True):
+    def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, salvar=True):
         if not (0 <= idx < 20): return
         print(f"Atribuindo IP {ip} ao slot {idx}")
         
@@ -592,7 +596,8 @@ class CentralMonitoramento(ctk.CTk):
         if atualizar_ui:
             self.update_idletasks() # Força atualização da UI apenas se solicitado
         
-        self.salvar_grid()
+        if salvar:
+            self.salvar_grid()
         
         # Gerenciamento de conexões
         if ip_antigo and ip_antigo != "0.0.0.0" and ip_antigo != ip and ip_antigo not in self.grid_cameras:
@@ -639,7 +644,19 @@ class CentralMonitoramento(ctk.CTk):
             if hasattr(handler, 'rodando') and handler.rodando: return
             del self.camera_handlers[ip]
         self.camera_handlers[ip] = "CONECTANDO"
-        threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
+        self.fila_pendente_conexoes.put((ip, canal))
+
+    def _processar_fila_conexoes_pendentes(self):
+        while True:
+            try:
+                if not self.fila_pendente_conexoes.empty():
+                    ip, canal = self.fila_pendente_conexoes.get()
+                    threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
+                    time.sleep(0.2)
+                else:
+                    time.sleep(0.1)
+            except Exception:
+                time.sleep(1)
 
     def _thread_conectar(self, ip, canal):
         try:
@@ -839,20 +856,20 @@ class CentralMonitoramento(ctk.CTk):
             self.atualizar_lista_presets_ui()
             # messagebox.showinfo("Presets", f"Predefinição '{nome}' salva com sucesso!")
 
-    def aplicar_preset(self, nome):
+    def aplicar_preset(self, nome, index=0):
         preset = self.presets.get(nome)
-        if preset:
-            # Otimização: Não atualiza a UI a cada slot para evitar travamento
-            for i, ip in enumerate(preset):
-                if i < 20:
-                    self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False)
-            
+        if not preset: return
+
+        if index < len(preset) and index < 20:
+            ip = preset[index]
+            self.atribuir_ip_ao_slot(index, ip, atualizar_ui=False, salvar=False)
+            self.after(50, lambda: self.aplicar_preset(nome, index + 1))
+        else:
+            # Finalizou o preset
+            self.salvar_grid()
             self.selecionar_slot(self.slot_selecionado)
-            # REMOVIDO: messagebox que bloqueia a interface e causa sensação de erro/travamento
-            print(f"Predefinição '{nome}' aplicada!")
-            
-            # Força atualização visual única no final
             self.update_idletasks()
+            print(f"Predefinição '{nome}' aplicada!")
 
     def deletar_preset(self, nome):
         if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
@@ -870,6 +887,12 @@ class CentralMonitoramento(ctk.CTk):
             self.presets[novo_nome] = self.presets.pop(nome_antigo)
             self.salvar_presets()
             self.atualizar_lista_presets_ui()
+
+    def sobrescrever_preset(self, nome):
+        if messagebox.askyesno("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?"):
+            self.presets[nome] = list(self.grid_cameras)
+            self.salvar_presets()
+            print(f"Preset '{nome}' atualizado!")
 
     def atualizar_lista_presets_ui(self):
         for child in self.scroll_presets.winfo_children():
@@ -891,6 +914,9 @@ class CentralMonitoramento(ctk.CTk):
             btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
                                      hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
             btn_ren.pack(side="right", padx=2)
+            btn_save = ctk.CTkButton(frm, text="S", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.sobrescrever_preset(n))
+            btn_save.pack(side="right", padx=2)
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
                                      hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
             btn_del.pack(side="right", padx=5)
