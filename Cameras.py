@@ -12,8 +12,8 @@ from requests.auth import HTTPDigestAuth
 from tkinter import messagebox, simpledialog
 
 # Configuração de baixa latência para OpenCV/FFMPEG
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;analyzeduration;100000;probesize;100000;fflags;discardcorrupt;max_delay;500000;reorder_queue_size;16"
-cv2.setNumThreads(0)
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;stimeout;5000000;buffer_size;10240000;analyzeduration;100000;probesize;100000;fflags;discardcorrupt;max_delay;500000;reorder_queue_size;16;rtsp_flags;prefer_tcp"
+cv2.setNumThreads(2)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
@@ -873,7 +873,9 @@ class CentralMonitoramento(ctk.CTk):
 
                 handler = self.camera_handlers.get(ip)
                 if handler is None:
-                    self.iniciar_conexao_assincrona(ip, 102)
+                    # Se estiver maximizado, tenta qualidade alta
+                    canal_restart = 101 if self.slot_maximized == i else 102
+                    self.iniciar_conexao_assincrona(ip, canal_restart)
                     continue
                 if handler == "CONECTANDO":
                     continue
