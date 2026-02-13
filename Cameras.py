@@ -12,7 +12,7 @@ from requests.auth import HTTPDigestAuth
 from tkinter import messagebox, simpledialog
 
 # Configuração de baixa latência para OpenCV/FFMPEG
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;analyzeduration;100000;probesize;100000;fflags;nobuffer+discardcorrupt;flags;low_delay;max_delay;0;bf;0"
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;analyzeduration;100000;probesize;100000;fflags;discardcorrupt;max_delay;500000;reorder_queue_size;16"
 cv2.setNumThreads(0)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
@@ -42,7 +42,7 @@ class CameraHandler:
 
             # Tenta definir buffer size de forma segura
             if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
-                try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
                 except: pass
 
             if self.cap.isOpened():
