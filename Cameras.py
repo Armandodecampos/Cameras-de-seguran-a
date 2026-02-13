@@ -17,9 +17,10 @@ cv2.setNumThreads(1)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
-    def __init__(self, url, canal=101):
-        self.url = url
+    def __init__(self, ip, canal=101):
+        self.ip = ip
         self.canal = canal
+        self.url = self._gerar_url(ip, canal)
         self.cap = None
         self.rodando = False
         self.frame_pil = None
@@ -28,19 +29,34 @@ class CameraHandler:
         self.conectado = False
         self.tamanho_alvo = (640, 480)
         self.interpolation = cv2.INTER_NEAREST
-        self.ip_display = url.split('@')[-1].split(':')[0] if '@' in url else "Camera"
+        self.ip_display = ip
+        self.prioridade = False
+        self.necessita_reconexao = False
+
+    def _gerar_url(self, ip, canal):
+        # RTSP String Padrão Hikvision/Intelbras
+        return f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
+
+    def set_prioridade(self, estado):
+        with self.lock:
+            self.prioridade = estado
+
+    def set_canal(self, novo_canal):
+        with self.lock:
+            if self.canal != novo_canal:
+                self.canal = novo_canal
+                self.url = self._gerar_url(self.ip, novo_canal)
+                self.necessita_reconexao = True
 
     def iniciar(self):
         try:
-            print(f"Tentando conectar em: {self.ip_display}...")
+            print(f"Tentando conectar em: {self.ip_display} (Canal {self.canal})...")
             self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
 
-            # Tenta forçar timeout de 5s na conexão se o driver e a versão do cv2 suportarem
             if hasattr(cv2, 'CAP_PROP_OPEN_TIMEOUT_USEC'):
                 try: self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_USEC, 5000000)
                 except: pass
 
-            # Tenta definir buffer size de forma segura
             if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
                 try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
                 except: pass
@@ -60,24 +76,60 @@ class CameraHandler:
 
     def loop_leitura(self):
         consecutive_failures = 0
-        while self.rodando and self.cap.isOpened():
-            ret, frame = self.cap.read()
+        last_process_time = 0
+
+        while self.rodando:
+            if self.necessita_reconexao:
+                with self.lock:
+                    print(f"Alterando canal de {self.ip_display} para {self.canal}...")
+                    if self.cap: self.cap.release()
+                    self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+                    if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
+                        try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
+                        except: pass
+                    self.necessita_reconexao = False
+                    consecutive_failures = 0
+
+            if not self.cap or not self.cap.isOpened():
+                time.sleep(0.5)
+                continue
+
+            # Grab frame (rápido, não decodifica)
+            ret = self.cap.grab()
+
             if ret:
                 consecutive_failures = 0
+                now = time.time()
+
+                # Controle de FPS Dinâmico
+                target_fps = 25 if self.prioridade else 8
+                if now - last_process_time < (1.0 / target_fps):
+                    continue
+
+                # Se a UI ainda não consumiu o frame anterior, e não é prioridade, podemos pular
+                if self.novo_frame and not self.prioridade:
+                    continue
+
+                # Retrieve frame (decodifica)
+                ret_ret, frame = self.cap.retrieve()
+                if not ret_ret:
+                    continue
+
+                last_process_time = now
+
                 try:
                     w, h = self.tamanho_alvo
-                    # Garante que w e h sejam inteiros para evitar erro no resize
                     w, h = int(w), int(h)
                     
-                    # Redimensiona apenas se necessário para economizar CPU
                     if frame.shape[1] != w or frame.shape[0] != h:
                         frame_res = cv2.resize(frame, (w, h), interpolation=self.interpolation)
                     else:
                         frame_res = frame
 
-                    # Adiciona timestamp ou IP para debug visual
-                    cv2.putText(frame_res, self.ip_display, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                    cv2.putText(frame_res, self.ip_display, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+                    # Adiciona IP para debug visual apenas se houver espaço
+                    if h > 50:
+                        cv2.putText(frame_res, self.ip_display, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                        cv2.putText(frame_res, self.ip_display, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
                     
                     rgb = cv2.cvtColor(frame_res, cv2.COLOR_BGR2RGB)
                     pil_img = Image.fromarray(rgb)
@@ -86,13 +138,14 @@ class CameraHandler:
                         self.frame_pil = pil_img
                         self.novo_frame = True
                 except Exception as e:
-                    # print(f"Erro processamento frame: {e}")
                     time.sleep(0.01)
             else:
                 consecutive_failures += 1
-                if consecutive_failures > 100: # ~1-2 segundos sem frames
-                    # print(f"LOG: Camera {self.ip_display} parou de enviar frames.")
-                    break
+                if consecutive_failures > 100:
+                    print(f"LOG: Camera {self.ip_display} sem frames. Tentando reconectar...")
+                    if self.cap: self.cap.release()
+                    self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+                    consecutive_failures = 0
                 time.sleep(0.01)
 
         if self.cap:
@@ -506,6 +559,10 @@ class CentralMonitoramento(ctk.CTk):
 
     def maximizar_slot(self, index):
         self.grid_frame.pack_configure(padx=0, pady=0)
+
+        # IP da câmera que será maximizada
+        ip_maximized = self.grid_cameras[index] if index < len(self.grid_cameras) else None
+
         for i, frm in enumerate(self.slot_frames):
             if i == index:
                 frm.grid_configure(row=0, column=0, rowspan=4, columnspan=5, padx=0, pady=0, sticky="nsew")
@@ -513,6 +570,17 @@ class CentralMonitoramento(ctk.CTk):
                 for child in frm.winfo_children(): child.pack_configure(padx=0, pady=0)
             else:
                 frm.grid_forget()
+
+        # Gerenciamento de Prioridade e Qualidade
+        for ip, handler in self.camera_handlers.items():
+            if handler == "CONECTANDO": continue
+            if ip == ip_maximized:
+                handler.set_prioridade(True)
+                handler.set_canal(101) # Switch to Main Stream
+            else:
+                handler.set_prioridade(False)
+                # Opcional: handler.set_canal(102) # Já deve estar em 102
+
         self.slot_maximized = index
         self.btn_expandir.lift()
 
@@ -574,13 +642,24 @@ class CentralMonitoramento(ctk.CTk):
 
     def restaurar_grid(self):
         self.grid_frame.pack_configure(padx=0, pady=0)
+
+        # IP que estava focado
         ip_foco = self.grid_cameras[self.slot_maximized] if self.slot_maximized is not None else None
+
         for i, frm in enumerate(self.slot_frames):
             row, col = i // 5, i % 5
             frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1, padx=1, pady=1, sticky="nsew")
             frm.configure(corner_radius=2)
             frm.grid()
             for child in frm.winfo_children(): child.pack_configure(padx=2, pady=2)
+
+        # Gerenciamento de Prioridade e Qualidade (Volta tudo ao normal)
+        for ip, handler in self.camera_handlers.items():
+            if handler == "CONECTANDO": continue
+            handler.set_prioridade(False)
+            if ip == ip_foco:
+                handler.set_canal(102) # Volta para Sub Stream
+
         self.slot_maximized = None
         self.btn_expandir.lift()
 
@@ -743,7 +822,8 @@ class CentralMonitoramento(ctk.CTk):
 
             if ip != "0.0.0.0":
                 if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-                self.iniciar_conexao_assincrona(ip, 102)
+                canal_alvo = 101 if self.slot_maximized == idx else 102
+                self.iniciar_conexao_assincrona(ip, canal_alvo)
 
     def selecionar_camera(self, ip):
         # Esta função é chamada ao clicar na lista lateral
@@ -796,9 +876,7 @@ class CentralMonitoramento(ctk.CTk):
 
     def _thread_conectar(self, ip, canal):
         try:
-            # RTSP String Padrão Hikvision/Intelbras
-            url = f"rtsp://admin:1357gov%40@{ip}:554/Streaming/Channels/{canal}"
-            nova_cam = CameraHandler(url, canal)
+            nova_cam = CameraHandler(ip, canal)
             sucesso = nova_cam.iniciar()
             self.fila_conexoes.put((sucesso, nova_cam, ip))
         except Exception as e:
@@ -870,8 +948,9 @@ class CentralMonitoramento(ctk.CTk):
 
                 handler = self.camera_handlers.get(ip)
                 if handler is None:
-                    # Sempre usa sub-stream para máxima estabilidade
-                    self.iniciar_conexao_assincrona(ip, 102)
+                    # Decide canal inicial dependendo se está maximizado ou não
+                    canal_alvo = 101 if self.slot_maximized == i else 102
+                    self.iniciar_conexao_assincrona(ip, canal_alvo)
                     continue
                 if handler == "CONECTANDO":
                     continue
