@@ -12,7 +12,7 @@ from requests.auth import HTTPDigestAuth
 from tkinter import messagebox, simpledialog
 
 # Configuração de baixa latência para OpenCV/FFMPEG
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp;analyzeduration;50000;probesize;50000;fflags;nobuffer;flags;low_delay;max_delay;0;bf;0"
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;analyzeduration;100000;probesize;100000;fflags;nobuffer+discardcorrupt;flags;low_delay;max_delay;0;bf;0"
 cv2.setNumThreads(0)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
@@ -23,6 +23,7 @@ class CameraHandler:
         self.cap = None
         self.rodando = False
         self.frame_pil = None
+        self.novo_frame = False
         self.lock = threading.Lock()
         self.conectado = False
         self.tamanho_alvo = (640, 480)
@@ -83,6 +84,7 @@ class CameraHandler:
                     
                     with self.lock:
                         self.frame_pil = pil_img
+                        self.novo_frame = True
                 except Exception as e:
                     # print(f"Erro processamento frame: {e}")
                     time.sleep(0.01)
@@ -100,6 +102,7 @@ class CameraHandler:
 
     def pegar_frame(self):
         with self.lock:
+            self.novo_frame = False
             return self.frame_pil
 
     def parar(self):
@@ -885,28 +888,29 @@ class CentralMonitoramento(ctk.CTk):
                     handler.tamanho_alvo = (wf, hf)
                     handler.interpolation = cv2.INTER_LINEAR if self.slot_maximized == i else cv2.INTER_NEAREST
 
-                    pil_img = handler.pegar_frame()
-                    if pil_img:
-                        wl, hl = wf / scaling, hf / scaling
+                    if handler.novo_frame:
+                        pil_img = handler.pegar_frame()
+                        if pil_img:
+                            wl, hl = wf / scaling, hf / scaling
 
-                        try:
-                            # Abordagem de criação direta para garantir atualização (testando se resolve 'dark screen')
-                            # Mas mantendo cache para não explodir pyimages
-                            if self.slot_ctk_images[i] is None:
-                                self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
-                                # print(f"DEBUG: Slot {i} ({ip}) - Primeiro Frame ({pil_img.size})")
-                            else:
-                                # Tenta atualizar o objeto existente
-                                self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                            try:
+                                # Abordagem de criação direta para garantir atualização (testando se resolve 'dark screen')
+                                # Mas mantendo cache para não explodir pyimages
+                                if self.slot_ctk_images[i] is None:
+                                    self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                                    # print(f"DEBUG: Slot {i} ({ip}) - Primeiro Frame ({pil_img.size})")
+                                else:
+                                    # Tenta atualizar o objeto existente
+                                    self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
 
-                            # SEMPRE garante que o label está apontando para o objeto de cache e sem texto
-                            if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
-                                self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
-                                self.slot_labels[i].image = self.slot_ctk_images[i]
-                        except Exception as e:
-                            # print(f"DEBUG: Erro ao renderizar frame no slot {i}: {e}")
-                            # Se falhar muito, tentamos recriar o cache do slot
-                            self.slot_ctk_images[i] = None
+                                # SEMPRE garante que o label está apontando para o objeto de cache e sem texto
+                                if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
+                                    self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
+                                    self.slot_labels[i].image = self.slot_ctk_images[i]
+                            except Exception as e:
+                                # print(f"DEBUG: Erro ao renderizar frame no slot {i}: {e}")
+                                # Se falhar muito, tentamos recriar o cache do slot
+                                self.slot_ctk_images[i] = None
                     else:
                         # Stream aberto mas sem frames (pode estar carregando ou com erro de codec)
                         # if i % 100 == 0: # Log esparso para não inundar
