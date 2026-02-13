@@ -12,8 +12,8 @@ from requests.auth import HTTPDigestAuth
 from tkinter import messagebox, simpledialog
 
 # Configuração de baixa latência para OpenCV/FFMPEG
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;stimeout;5000000;buffer_size;10240000;analyzeduration;100000;probesize;100000;fflags;discardcorrupt;max_delay;500000;reorder_queue_size;16;rtsp_flags;prefer_tcp"
-cv2.setNumThreads(2)
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;stimeout;5000000;buffer_size;2048000;analyzeduration;100000;probesize;100000;fflags;discardcorrupt;max_delay;500000;reorder_queue_size;16;rtsp_flags;prefer_tcp;reconnect;1;reconnect_streamed;1;reconnect_at_eof;1"
+cv2.setNumThreads(1)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
@@ -514,8 +514,6 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 frm.grid_forget()
         self.slot_maximized = index
-        ip = self.grid_cameras[index]
-        if ip: self.trocar_qualidade(ip, 101)
         self.btn_expandir.lift()
 
     def ao_pressionar_slot(self, event, index):
@@ -584,7 +582,6 @@ class CentralMonitoramento(ctk.CTk):
             frm.grid()
             for child in frm.winfo_children(): child.pack_configure(padx=2, pady=2)
         self.slot_maximized = None
-        if ip_foco: self.trocar_qualidade(ip_foco, 102)
         self.btn_expandir.lift()
 
     def selecionar_slot(self, index):
@@ -873,9 +870,8 @@ class CentralMonitoramento(ctk.CTk):
 
                 handler = self.camera_handlers.get(ip)
                 if handler is None:
-                    # Se estiver maximizado, tenta qualidade alta
-                    canal_restart = 101 if self.slot_maximized == i else 102
-                    self.iniciar_conexao_assincrona(ip, canal_restart)
+                    # Sempre usa sub-stream para máxima estabilidade
+                    self.iniciar_conexao_assincrona(ip, 102)
                     continue
                 if handler == "CONECTANDO":
                     continue
