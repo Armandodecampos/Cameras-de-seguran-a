@@ -1100,8 +1100,16 @@ class CentralMonitoramento(ctk.CTk):
                     return
             self.presets[nome] = list(self.grid_cameras)
             self.salvar_presets()
+            self.ultimo_preset = nome
             self.atualizar_lista_presets_ui()
             # messagebox.showinfo("Presets", f"Predefinição '{nome}' salva com sucesso!")
+
+    def sobrescrever_preset(self, nome):
+        if messagebox.askyesno("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a grade atual?"):
+            self.presets[nome] = list(self.grid_cameras)
+            self.salvar_presets()
+            self.ultimo_preset = nome
+            self.atualizar_lista_presets_ui()
 
     def aplicar_preset(self, nome):
         preset = self.presets.get(nome)
@@ -1127,8 +1135,9 @@ class CentralMonitoramento(ctk.CTk):
             ip = preset[i] if i < len(preset) else "0.0.0.0"
             novos_ips[i] = ip
             
-            # Atualiza visualmente cada slot de forma segura
-            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False)
+            # Atualiza visualmente cada slot de forma segura apenas se o IP mudou
+            if self.grid_cameras[i] != ip:
+                self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False)
 
         # 3. Identifica IPs que não estão mais no grid e fecha-os
         ips_novos_set = set(ip for ip in novos_ips if ip and ip != "0.0.0.0")
@@ -1156,6 +1165,8 @@ class CentralMonitoramento(ctk.CTk):
         if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
             if nome in self.presets:
                 del self.presets[nome]
+                if self.ultimo_preset == nome:
+                    self.ultimo_preset = None
                 self.salvar_presets()
                 self.atualizar_lista_presets_ui()
 
@@ -1166,6 +1177,8 @@ class CentralMonitoramento(ctk.CTk):
                 messagebox.showerror("Erro", "Já existe um preset com este nome.")
                 return
             self.presets[novo_nome] = self.presets.pop(nome_antigo)
+            if self.ultimo_preset == nome_antigo:
+                self.ultimo_preset = novo_nome
             self.salvar_presets()
             self.atualizar_lista_presets_ui()
 
@@ -1182,19 +1195,25 @@ class CentralMonitoramento(ctk.CTk):
             
             # Label
             lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w", cursor="hand2")
-            lbl.pack(side="left", fill="x", padx=10)
+            lbl.pack(side="left", fill="both", expand=True, padx=10)
             
             # Bind no Frame E no Label para facilitar o clique
             frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             frm.configure(cursor="hand2")
             
-            btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
-                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
-            btn_ren.pack(side="right", padx=2)
+            # Botões de ação (X, S, R) - Ordem da direita para a esquerda: X, S, R
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
                                      hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
             btn_del.pack(side="right", padx=5)
+
+            btn_sob = ctk.CTkButton(frm, text="S", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.sobrescrever_preset(n))
+            btn_sob.pack(side="right", padx=2)
+
+            btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
+            btn_ren.pack(side="right", padx=2)
 
             self.preset_widgets[nome] = frm
 
