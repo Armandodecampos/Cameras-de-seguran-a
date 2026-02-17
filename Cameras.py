@@ -779,7 +779,7 @@ class CentralMonitoramento(ctk.CTk):
             print(f"ERRO AO RECRIAR LABEL {idx}: {e}")
             return None
 
-    def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True):
+    def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True, salvar=True):
         if not (0 <= idx < 20): return
         
         # Limpa preset ao atribuir manualmente (se for uma atribuição direta, não via aplicar_preset)
@@ -810,7 +810,8 @@ class CentralMonitoramento(ctk.CTk):
         if atualizar_ui:
             self.update_idletasks()
         
-        self.salvar_grid()
+        if salvar:
+            self.salvar_grid()
         
         # 2. Gerenciamento de conexões (se solicitado)
         if gerenciar_conexoes:
@@ -1100,8 +1101,16 @@ class CentralMonitoramento(ctk.CTk):
                     return
             self.presets[nome] = list(self.grid_cameras)
             self.salvar_presets()
+            self.ultimo_preset = nome
             self.atualizar_lista_presets_ui()
             # messagebox.showinfo("Presets", f"Predefinição '{nome}' salva com sucesso!")
+
+    def sobrescrever_preset(self, nome):
+        if messagebox.askyesno("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a grade atual?"):
+            self.presets[nome] = list(self.grid_cameras)
+            self.salvar_presets()
+            self.ultimo_preset = nome
+            self.atualizar_lista_presets_ui()
 
     def aplicar_preset(self, nome):
         preset = self.presets.get(nome)
@@ -1128,7 +1137,9 @@ class CentralMonitoramento(ctk.CTk):
             novos_ips[i] = ip
             
             # Atualiza visualmente cada slot de forma segura
-            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False)
+            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False, salvar=False)
+
+        self.salvar_grid()
 
         # 3. Identifica IPs que não estão mais no grid e fecha-os
         ips_novos_set = set(ip for ip in novos_ips if ip and ip != "0.0.0.0")
@@ -1155,6 +1166,8 @@ class CentralMonitoramento(ctk.CTk):
     def deletar_preset(self, nome):
         if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
             if nome in self.presets:
+                if self.ultimo_preset == nome:
+                    self.ultimo_preset = None
                 del self.presets[nome]
                 self.salvar_presets()
                 self.atualizar_lista_presets_ui()
@@ -1165,6 +1178,8 @@ class CentralMonitoramento(ctk.CTk):
             if novo_nome in self.presets:
                 messagebox.showerror("Erro", "Já existe um preset com este nome.")
                 return
+            if self.ultimo_preset == nome_antigo:
+                self.ultimo_preset = novo_nome
             self.presets[novo_nome] = self.presets.pop(nome_antigo)
             self.salvar_presets()
             self.atualizar_lista_presets_ui()
@@ -1180,21 +1195,27 @@ class CentralMonitoramento(ctk.CTk):
             frm.pack(fill="x", pady=2, padx=2)
             frm.pack_propagate(False)
             
-            # Label
+            # Botões à direita primeiro
+            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
+                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
+            btn_del.pack(side="right", padx=5)
+
+            btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
+            btn_ren.pack(side="right", padx=2)
+
+            btn_sob = ctk.CTkButton(frm, text="S", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.sobrescrever_preset(n))
+            btn_sob.pack(side="right", padx=2)
+
+            # Label (ocupa o resto da esquerda)
             lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w", cursor="hand2")
-            lbl.pack(side="left", fill="x", padx=10)
+            lbl.pack(side="left", fill="both", expand=True, padx=10)
             
             # Bind no Frame E no Label para facilitar o clique
             frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             frm.configure(cursor="hand2")
-            
-            btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
-                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
-            btn_ren.pack(side="right", padx=2)
-            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
-                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
-            btn_del.pack(side="right", padx=5)
 
             self.preset_widgets[nome] = frm
 
