@@ -305,23 +305,6 @@ class CentralMonitoramento(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
         self.main_frame.grid(row=0, column=2, sticky="nsew")
 
-        # Painel Topo
-        self.painel_topo = ctk.CTkFrame(self.main_frame, fg_color=self.BG_PANEL, height=40)
-        self.painel_topo.pack(side="top", fill="x", padx=0, pady=0)
-
-        self.container_info_topo = ctk.CTkFrame(self.painel_topo, fg_color="transparent")
-        self.container_info_topo.pack(side="left", padx=10, pady=2)
-
-        self.lbl_nome_topo = ctk.CTkLabel(self.container_info_topo, text="Nenhuma câmera selecionada",
-                                          font=("Roboto", 15, "bold"), text_color=self.ACCENT_RED)
-        self.lbl_nome_topo.pack(side="top", anchor="w")
-
-        self.lbl_ip_topo = ctk.CTkLabel(self.container_info_topo, text="",
-                                        font=("Roboto", 13), text_color=self.TEXT_S)
-        self.lbl_ip_topo.pack(side="top", anchor="w")
-
-        self.entry_nome = ctk.CTkEntry(self.painel_topo, width=300, placeholder_text="Nome da câmera...")
-
         # Grid Frame (Câmeras)
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=0, pady=0)
@@ -342,19 +325,23 @@ class CentralMonitoramento(ctk.CTk):
 
         self.slot_frames = []
         self.slot_labels = []
+        self.slot_name_labels = []
         for i in range(20):
             row, col = i // 5, i % 5
             frm = ctk.CTkFrame(self.grid_frame, fg_color=self.BG_SIDEBAR, corner_radius=2, border_width=2, border_color="black")
             frm.grid(row=row, column=col, padx=1, pady=1, sticky="nsew")
             frm.pack_propagate(False)
 
+            lbl_nome = ctk.CTkLabel(frm, text="", font=("Roboto", 11, "bold"), text_color=self.TEXT_P, fg_color="#000000", height=20)
+            lbl_nome.pack(side="top", fill="x")
+            self.slot_name_labels.append(lbl_nome)
+
             lbl = ctk.CTkLabel(frm, text=f"Espaço {i+1}", corner_radius=0)
             lbl.pack(expand=True, fill="both", padx=2, pady=2)
 
-            frm.bind("<Button-1>", lambda e, idx=i: self.ao_pressionar_slot(e, idx))
-            lbl.bind("<Button-1>", lambda e, idx=i: self.ao_pressionar_slot(e, idx))
-            frm.bind("<ButtonRelease-1>", lambda e, idx=i: self.ao_soltar_slot(e, idx))
-            lbl.bind("<ButtonRelease-1>", lambda e, idx=i: self.ao_soltar_slot(e, idx))
+            for widget in [frm, lbl, lbl_nome]:
+                widget.bind("<Button-1>", lambda e, idx=i: self.ao_pressionar_slot(e, idx))
+                widget.bind("<ButtonRelease-1>", lambda e, idx=i: self.ao_soltar_slot(e, idx))
 
             self.slot_frames.append(frm)
             self.slot_labels.append(lbl)
@@ -364,6 +351,7 @@ class CentralMonitoramento(ctk.CTk):
         for i, ip in enumerate(self.grid_cameras):
             if ip and ip != "0.0.0.0":
                 self.slot_labels[i].configure(text=f"AGUARDANDO\n{ip}")
+                self.slot_name_labels[i].configure(text=self.dados_cameras.get(ip, ""))
 
         self.selecionar_slot(self.slot_selecionado)
         self.restaurar_grid()
@@ -487,7 +475,6 @@ class CentralMonitoramento(ctk.CTk):
         self.btn_toggle_sidebar.grid_forget()
 
         self.main_frame.grid_configure(column=0, columnspan=3)
-        self.painel_topo.pack_forget()
 
         self.grid_frame.pack_forget()
         self.grid_frame.pack(expand=True, fill="both", padx=0, pady=0)
@@ -518,8 +505,6 @@ class CentralMonitoramento(ctk.CTk):
         self.btn_toggle_sidebar.grid(row=0, column=1, sticky="ns")
         self.main_frame.grid_configure(column=2, columnspan=1)
         
-        self.painel_topo.pack(side="top", fill="x", padx=0, pady=0)
-
         self.grid_frame.pack_forget()
         padx_grid = 0 if self.slot_maximized is not None else 0
         pady_grid = 0 if self.slot_maximized is not None else 0
@@ -679,8 +664,6 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_frames[index].configure(border_color=self.ACCENT_RED, border_width=2)
 
         self.title(f"Monitoramento ABI - Espaço {index + 1} selecionado")
-        self.entry_nome.pack_forget()
-        self.container_info_topo.pack(side="left", padx=10, pady=2)
         self.btn_renomear.configure(text="✎")
 
         ip_novo = self.grid_cameras[index]
@@ -688,11 +671,7 @@ class CentralMonitoramento(ctk.CTk):
             if ip_anterior and ip_anterior != ip_novo: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = ip_novo
             nome = self.dados_cameras.get(ip_novo, "")
-            self.entry_nome.delete(0, "end")
-            self.entry_nome.insert(0, nome)
             self.pintar_botao(ip_novo, self.ACCENT_WINE)
-            self.lbl_nome_topo.configure(text=self.formatar_nome(nome if nome else 'Câmera'))
-            self.lbl_ip_topo.configure(text=f"({ip_novo})")
             self.btn_renomear.configure(state="normal")
             txt = "Diminuir" if self.slot_maximized == index else "Aumentar"
             self.btn_expandir.configure(text=txt)
@@ -705,9 +684,6 @@ class CentralMonitoramento(ctk.CTk):
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
-            self.entry_nome.delete(0, "end")
-            self.lbl_nome_topo.configure(text="Nenhuma câmera selecionada")
-            self.lbl_ip_topo.configure(text="")
             self.btn_renomear.configure(state="disabled")
             self.btn_expandir.place_forget()
             self.btn_renomear.place_forget()
@@ -727,7 +703,6 @@ class CentralMonitoramento(ctk.CTk):
         if self.ip_selecionado:
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
-            self.entry_nome.delete(0, "end")
         
         self.btn_expandir.place_forget()
         self.btn_renomear.place_forget()
@@ -816,6 +791,9 @@ class CentralMonitoramento(ctk.CTk):
             # Tenta configurar o label existente
             self.slot_labels[idx].configure(image=self.img_vazia, text=txt)
             self.slot_labels[idx].image = self.img_vazia
+            # Atualiza o nome da câmera no slot
+            nome = self.dados_cameras.get(ip, "") if ip != "0.0.0.0" else ""
+            self.slot_name_labels[idx].configure(text=nome)
             # Limpa cache do slot para evitar fantasmas ou falhas de sincronia
             self.slot_ctk_images[idx] = None
         except Exception as e:
@@ -824,7 +802,7 @@ class CentralMonitoramento(ctk.CTk):
             if lbl:
                 try: lbl.configure(text=txt)
                 except: pass
-            
+
         if atualizar_ui:
             self.update_idletasks()
 
@@ -1037,33 +1015,28 @@ class CentralMonitoramento(ctk.CTk):
 
     def alternar_edicao_nome(self):
         if not self.ip_selecionado: return
-        if self.btn_renomear.cget("text") == "✎":
-            self.container_info_topo.pack_forget()
-            self.entry_nome.pack(side="left", padx=10, pady=5)
-            self.entry_nome.delete(0, "end")
-            self.entry_nome.insert(0, self.dados_cameras.get(self.ip_selecionado, ""))
-            self.btn_renomear.configure(text="✓")
-        else:
-            self.salvar_nome()
-            self.entry_nome.pack_forget()
-            self.container_info_topo.pack(side="left", padx=10, pady=2)
-            self.btn_renomear.configure(text="✎")
+        dialog = ctk.CTkInputDialog(text="Digite o novo nome para a câmera:", title="Renomear Câmera")
+        novo_nome = dialog.get_input()
+        if novo_nome is not None:
+            self.salvar_nome(novo_nome)
 
-    def salvar_nome(self):
+    def salvar_nome(self, novo_nome):
         if self.ip_selecionado:
-            novo_nome = self.entry_nome.get()
             self.dados_cameras[self.ip_selecionado] = novo_nome
             with open(self.arquivo_config, "w", encoding='utf-8') as f:
                 json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
-            
+
             # Atualiza handler se existir
             handler = self.camera_handlers.get(self.ip_selecionado)
             if handler and handler != "CONECTANDO":
                 handler.nome_display = novo_nome
 
+            # Atualiza os labels nos slots que contém este IP
+            for i, ip in enumerate(self.grid_cameras):
+                if ip == self.ip_selecionado:
+                    self.slot_name_labels[i].configure(text=novo_nome)
+
             self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
-            self.lbl_nome_topo.configure(text=self.formatar_nome(novo_nome))
-            self.lbl_ip_topo.configure(text=f"({self.ip_selecionado})")
             self.filtrar_lista()
 
     def gerar_lista_ips(self):
