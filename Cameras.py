@@ -1099,6 +1099,7 @@ class CentralMonitoramento(ctk.CTk):
                 if not messagebox.askyesno("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?"):
                     return
             self.presets[nome] = list(self.grid_cameras)
+            self.ultimo_preset = nome
             self.salvar_presets()
             self.atualizar_lista_presets_ui()
             # messagebox.showinfo("Presets", f"Predefinição '{nome}' salva com sucesso!")
@@ -1152,10 +1153,19 @@ class CentralMonitoramento(ctk.CTk):
         self.update_idletasks()
         # print(f"Predefinição '{nome}' aplicada!")
 
+    def sobrescrever_preset(self, nome):
+        if messagebox.askyesno("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?"):
+            self.presets[nome] = list(self.grid_cameras)
+            self.salvar_presets()
+            self.ultimo_preset = nome
+            self.atualizar_lista_presets_ui()
+
     def deletar_preset(self, nome):
         if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
             if nome in self.presets:
                 del self.presets[nome]
+                if self.ultimo_preset == nome:
+                    self.ultimo_preset = None
                 self.salvar_presets()
                 self.atualizar_lista_presets_ui()
 
@@ -1166,6 +1176,8 @@ class CentralMonitoramento(ctk.CTk):
                 messagebox.showerror("Erro", "Já existe um preset com este nome.")
                 return
             self.presets[novo_nome] = self.presets.pop(nome_antigo)
+            if self.ultimo_preset == nome_antigo:
+                self.ultimo_preset = novo_nome
             self.salvar_presets()
             self.atualizar_lista_presets_ui()
 
@@ -1182,19 +1194,22 @@ class CentralMonitoramento(ctk.CTk):
             
             # Label
             lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w", cursor="hand2")
-            lbl.pack(side="left", fill="x", padx=10)
+            lbl.pack(side="left", expand=True, fill="both", padx=10)
             
             # Bind no Frame E no Label para facilitar o clique
             frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             frm.configure(cursor="hand2")
             
-            btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
-                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
-            btn_ren.pack(side="right", padx=2)
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
                                      hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
             btn_del.pack(side="right", padx=5)
+            btn_ren = ctk.CTkButton(frm, text="R", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
+            btn_ren.pack(side="right", padx=2)
+            btn_sob = ctk.CTkButton(frm, text="S", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.sobrescrever_preset(n))
+            btn_sob.pack(side="right", padx=2)
 
             self.preset_widgets[nome] = frm
 
