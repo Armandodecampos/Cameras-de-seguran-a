@@ -138,9 +138,14 @@ class CameraHandler:
 
                     # Adiciona Nome e IP para debug visual apenas se houver espaço e estiver habilitado
                     if h > 50 and self.exibir_info:
-                        info = f"{self.nome_display} - {self.ip_display}" if self.nome_display else self.ip_display
-                        cv2.putText(frame_res, info, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                        cv2.putText(frame_res, info, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+                        # Nome da Câmera (Superior Esquerda)
+                        if self.nome_display:
+                            cv2.putText(frame_res, self.nome_display, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                            cv2.putText(frame_res, self.nome_display, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+
+                        # IP da Câmera (Linha abaixo)
+                        cv2.putText(frame_res, self.ip_display, (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                        cv2.putText(frame_res, self.ip_display, (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
                     rgb = cv2.cvtColor(frame_res, cv2.COLOR_BGR2RGB)
                     pil_img = Image.fromarray(rgb)
@@ -317,13 +322,15 @@ class CentralMonitoramento(ctk.CTk):
         # Botão Aumentar/Diminuir
         self.btn_expandir = ctk.CTkButton(self.grid_frame, text="Aumentar", width=100, height=35,
                                            fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
-                                           command=self.toggle_grid_layout)
+                                           corner_radius=0, command=self.toggle_grid_layout)
 
         self.btn_limpar_slot = ctk.CTkButton(self.grid_frame, text="🗑", command=self.limpar_slot_atual,
-                                             fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE, width=40)
+                                             fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                             corner_radius=0, width=40)
 
         self.btn_renomear = ctk.CTkButton(self.grid_frame, text="✎", command=self.alternar_edicao_nome,
-                                        fg_color=self.GRAY_DARK, hover_color=self.TEXT_S, width=40, state="disabled")
+                                        fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                        corner_radius=0, width=40, state="disabled")
 
         self.slot_frames = []
         self.slot_labels = []
@@ -342,10 +349,6 @@ class CentralMonitoramento(ctk.CTk):
 
             self.slot_frames.append(frm)
             self.slot_labels.append(lbl)
-
-        # Label dinâmico para Nome - IP (Overlay)
-        self.lbl_info_slot = ctk.CTkLabel(self.grid_frame, text="", font=("Roboto", 12, "bold"),
-                                          text_color=self.TEXT_P, fg_color="black", corner_radius=4)
 
         self.criar_botoes_iniciais()
         # Restaura estado inicial
@@ -685,17 +688,13 @@ class CentralMonitoramento(ctk.CTk):
             if handler and handler != "CONECTANDO":
                 handler.set_exibir_info(True)
 
-            # Configura e posiciona o label de info dinâmico
-            info_txt = f"{nome} - {ip_novo}" if nome else ip_novo
-            self.lbl_info_slot.configure(text=info_txt)
-            self.lbl_info_slot.place(in_=self.slot_frames[index], relx=0.0, rely=0.0, x=10, y=10, anchor="nw")
-            self.lbl_info_slot.lift()
-
             txt = "Diminuir" if self.slot_maximized == index else "Aumentar"
             self.btn_expandir.configure(text=txt)
+
+            # Ordem: Excluir, Editar, Aumentar (da esquerda para direita no canto inferior direito)
+            self.btn_limpar_slot.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-185, y=-10, anchor="se")
+            self.btn_renomear.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-140, y=-10, anchor="se")
             self.btn_expandir.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
-            self.btn_renomear.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-120, y=-10, anchor="se")
-            self.btn_limpar_slot.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-170, y=-10, anchor="se")
             self.btn_expandir.lift()
             self.btn_renomear.lift()
             self.btn_limpar_slot.lift()
@@ -703,7 +702,6 @@ class CentralMonitoramento(ctk.CTk):
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
             self.btn_renomear.configure(state="disabled")
-            self.lbl_info_slot.place_forget()
             self.btn_expandir.place_forget()
             self.btn_renomear.place_forget()
             self.btn_limpar_slot.place_forget()
@@ -723,7 +721,6 @@ class CentralMonitoramento(ctk.CTk):
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
         
-        self.lbl_info_slot.place_forget()
         self.btn_expandir.place_forget()
         self.btn_renomear.place_forget()
         self.btn_limpar_slot.place_forget()
@@ -1055,10 +1052,6 @@ class CentralMonitoramento(ctk.CTk):
             handler = self.camera_handlers.get(self.ip_selecionado)
             if handler and handler != "CONECTANDO":
                 handler.nome_display = novo_nome
-
-            # Atualiza o label dinâmico se for a câmera selecionada
-            info_txt = f"{novo_nome} - {self.ip_selecionado}" if novo_nome else self.ip_selecionado
-            self.lbl_info_slot.configure(text=info_txt)
 
             self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
             self.filtrar_lista()
