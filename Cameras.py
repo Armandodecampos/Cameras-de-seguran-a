@@ -292,9 +292,20 @@ class CentralMonitoramento(ctk.CTk):
         self.scroll_presets = ctk.CTkScrollableFrame(tab_presets, fg_color="transparent")
         self.scroll_presets.pack(expand=True, fill="both", padx=5, pady=5)
 
-        # 2. Botão Toggle Sidebar (Coluna 1)
+        # 2. Container Toggle Sidebar (Coluna 1)
+        self.container_toggle = ctk.CTkFrame(self, fg_color=self.BG_PANEL, corner_radius=0)
+        self.container_toggle.grid(row=0, column=1, sticky="ns")
+
+        self.lbl_lista_vertical = ctk.CTkLabel(
+            self.container_toggle,
+            text="L\nI\nS\nT\nA",
+            font=("Roboto", 11, "bold"),
+            text_color=self.TEXT_S
+        )
+        self.lbl_lista_vertical.pack(side="left", padx=(2, 0))
+
         self.btn_toggle_sidebar = ctk.CTkButton(
-            self,
+            self.container_toggle,
             text="◀",
             width=40,
             corner_radius=0,
@@ -304,7 +315,7 @@ class CentralMonitoramento(ctk.CTk):
             text_color=self.ACCENT_RED,
             command=self.toggle_sidebar
         )
-        self.btn_toggle_sidebar.grid(row=0, column=1, sticky="ns", padx=0, pady=0)
+        self.btn_toggle_sidebar.pack(side="right", fill="y")
 
         # 3. Main Frame (Coluna 2)
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
@@ -470,7 +481,7 @@ class CentralMonitoramento(ctk.CTk):
         self.em_tela_cheia = True
         
         self.sidebar.grid_forget()
-        self.btn_toggle_sidebar.grid_forget()
+        self.container_toggle.grid_forget()
 
         self.main_frame.grid_configure(column=0, columnspan=3)
 
@@ -500,7 +511,7 @@ class CentralMonitoramento(ctk.CTk):
         if self.sidebar_visible:
             self.sidebar.grid(row=0, column=0, sticky="nsew")
         
-        self.btn_toggle_sidebar.grid(row=0, column=1, sticky="ns")
+        self.container_toggle.grid(row=0, column=1, sticky="ns")
         self.main_frame.grid_configure(column=2, columnspan=1)
         
         self.grid_frame.pack_forget()
