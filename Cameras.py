@@ -9,8 +9,6 @@ import socket
 import queue
 import requests
 from requests.auth import HTTPDigestAuth
-from tkinter import messagebox, simpledialog
-
 # Configuração de baixa latência para OpenCV/FFMPEG
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;stimeout;5000000;buffer_size;2048000;analyzeduration;100000;probesize;100000;fflags;discardcorrupt;max_delay;500000;reorder_queue_size;16;rtsp_flags;prefer_tcp;reconnect;1;reconnect_streamed;1;reconnect_at_eof;1"
 cv2.setNumThreads(1)
@@ -796,6 +794,89 @@ class CentralMonitoramento(ctk.CTk):
                                     command=modal.destroy)
         btn_fechar.pack(fill="x", padx=40, pady=(20, 0))
 
+    def abrir_modal_input(self, titulo, mensagem, callback, valor_inicial=""):
+        modal = ctk.CTkToplevel(self)
+        modal.title(titulo)
+        modal.geometry("400x250")
+        modal.resizable(False, False)
+        modal.attributes("-topmost", True)
+
+        try:
+            self.update_idletasks()
+            x = self.winfo_x() + (self.winfo_width() // 2) - 200
+            y = self.winfo_y() + (self.winfo_height() // 2) - 125
+            modal.geometry(f"+{x}+{y}")
+        except: pass
+
+        ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P).pack(pady=(20, 10))
+
+        entry = ctk.CTkEntry(modal, width=300)
+        entry.insert(0, valor_inicial)
+        entry.pack(pady=10)
+        entry.focus_set()
+
+        def confirmar():
+            valor = entry.get()
+            modal.destroy()
+            callback(valor)
+
+        btn_confirmar = ctk.CTkButton(modal, text="Confirmar", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                      corner_radius=0, height=40, command=confirmar)
+        btn_confirmar.pack(fill="x", padx=40, pady=5)
+
+        btn_cancelar = ctk.CTkButton(modal, text="Cancelar", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                     corner_radius=0, height=40, command=modal.destroy)
+        btn_cancelar.pack(fill="x", padx=40, pady=5)
+
+        modal.bind("<Return>", lambda e: confirmar())
+
+    def abrir_modal_confirmacao(self, titulo, mensagem, callback_sim):
+        modal = ctk.CTkToplevel(self)
+        modal.title(titulo)
+        modal.geometry("400x200")
+        modal.resizable(False, False)
+        modal.attributes("-topmost", True)
+
+        try:
+            self.update_idletasks()
+            x = self.winfo_x() + (self.winfo_width() // 2) - 200
+            y = self.winfo_y() + (self.winfo_height() // 2) - 100
+            modal.geometry(f"+{x}+{y}")
+        except: pass
+
+        ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, wraplength=320).pack(pady=(30, 20))
+
+        frame_btns = ctk.CTkFrame(modal, fg_color="transparent")
+        frame_btns.pack(fill="x", padx=40)
+
+        btn_sim = ctk.CTkButton(frame_btns, text="Sim", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                corner_radius=0, height=40, width=140, command=lambda: [modal.destroy(), callback_sim()])
+        btn_sim.pack(side="left", expand=True, padx=5)
+
+        btn_nao = ctk.CTkButton(frame_btns, text="Não", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                corner_radius=0, height=40, width=140, command=modal.destroy)
+        btn_nao.pack(side="right", expand=True, padx=5)
+
+    def abrir_modal_alerta(self, titulo, mensagem):
+        modal = ctk.CTkToplevel(self)
+        modal.title(titulo)
+        modal.geometry("400x180")
+        modal.resizable(False, False)
+        modal.attributes("-topmost", True)
+
+        try:
+            self.update_idletasks()
+            x = self.winfo_x() + (self.winfo_width() // 2) - 200
+            y = self.winfo_y() + (self.winfo_height() // 2) - 90
+            modal.geometry(f"+{x}+{y}")
+        except: pass
+
+        ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, wraplength=320).pack(pady=(30, 20))
+
+        btn_ok = ctk.CTkButton(modal, text="OK", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                               corner_radius=0, height=40, command=modal.destroy)
+        btn_ok.pack(fill="x", padx=60, pady=10)
+
     def recriar_label_slot(self, idx):
         """Recria o CTkLabel de um slot para limpar estados corrompidos do Tcl/Tkinter."""
         # print(f"LOG: Recriando Label do slot {idx}")
@@ -1073,10 +1154,8 @@ class CentralMonitoramento(ctk.CTk):
 
     def alternar_edicao_nome(self):
         if not self.ip_selecionado: return
-        dialog = ctk.CTkInputDialog(text="Digite o novo nome para a câmera:", title="Renomear Câmera")
-        novo_nome = dialog.get_input()
-        if novo_nome is not None:
-            self.salvar_nome(novo_nome)
+        self.abrir_modal_input("Renomear Câmera", "Digite o novo nome para a câmera:",
+                               self.salvar_nome, valor_inicial=self.dados_cameras.get(self.ip_selecionado, ""))
 
     def salvar_nome(self, novo_nome):
         if self.ip_selecionado:
@@ -1144,16 +1223,21 @@ class CentralMonitoramento(ctk.CTk):
             print(f"Erro ao salvar presets: {e}")
 
     def salvar_preset_atual(self):
-        nome = simpledialog.askstring("Salvar Preset", "Digite um nome para esta predefinição:")
-        if nome:
-            if nome in self.presets:
-                if not messagebox.askyesno("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?"):
-                    return
-            self.presets[nome] = list(self.grid_cameras)
-            self.ultimo_preset = nome
-            self.salvar_presets()
-            self.atualizar_lista_presets_ui()
-            # messagebox.showinfo("Presets", f"Predefinição '{nome}' salva com sucesso!")
+        def on_name_entered(nome):
+            if nome:
+                if nome in self.presets:
+                    self.abrir_modal_confirmacao("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?",
+                                                 lambda: self._salvar_preset(nome))
+                else:
+                    self._salvar_preset(nome)
+
+        self.abrir_modal_input("Salvar Preset", "Digite um nome para esta predefinição:", on_name_entered)
+
+    def _salvar_preset(self, nome):
+        self.presets[nome] = list(self.grid_cameras)
+        self.ultimo_preset = nome
+        self.salvar_presets()
+        self.atualizar_lista_presets_ui()
 
     def aplicar_preset(self, nome):
         preset = self.presets.get(nome)
@@ -1205,32 +1289,41 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_preset(self, nome):
-        if messagebox.askyesno("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?"):
-            self.presets[nome] = list(self.grid_cameras)
-            self.salvar_presets()
-            self.ultimo_preset = nome
-            self.atualizar_lista_presets_ui()
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?",
+                                     lambda: self._sobrescrever_preset(nome))
+
+    def _sobrescrever_preset(self, nome):
+        self.presets[nome] = list(self.grid_cameras)
+        self.salvar_presets()
+        self.ultimo_preset = nome
+        self.atualizar_lista_presets_ui()
 
     def deletar_preset(self, nome):
-        if messagebox.askyesno("Confirmar", f"Deseja realmente excluir o preset '{nome}'?"):
-            if nome in self.presets:
-                del self.presets[nome]
-                if self.ultimo_preset == nome:
-                    self.ultimo_preset = None
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o preset '{nome}'?",
+                                     lambda: self._deletar_preset(nome))
+
+    def _deletar_preset(self, nome):
+        if nome in self.presets:
+            del self.presets[nome]
+            if self.ultimo_preset == nome:
+                self.ultimo_preset = None
+            self.salvar_presets()
+            self.atualizar_lista_presets_ui()
+
+    def renomear_preset(self, nome_antigo):
+        def on_name_entered(novo_nome):
+            if novo_nome and novo_nome != nome_antigo:
+                if novo_nome in self.presets:
+                    self.abrir_modal_alerta("Erro", "Já existe um preset com este nome.")
+                    return
+                self.presets[novo_nome] = self.presets.pop(nome_antigo)
+                if self.ultimo_preset == nome_antigo:
+                    self.ultimo_preset = novo_nome
                 self.salvar_presets()
                 self.atualizar_lista_presets_ui()
 
-    def renomear_preset(self, nome_antigo):
-        novo_nome = simpledialog.askstring("Renomear Preset", f"Novo nome para '{nome_antigo}':", initialvalue=nome_antigo)
-        if novo_nome and novo_nome != nome_antigo:
-            if novo_nome in self.presets:
-                messagebox.showerror("Erro", "Já existe um preset com este nome.")
-                return
-            self.presets[novo_nome] = self.presets.pop(nome_antigo)
-            if self.ultimo_preset == nome_antigo:
-                self.ultimo_preset = novo_nome
-            self.salvar_presets()
-            self.atualizar_lista_presets_ui()
+        self.abrir_modal_input("Renomear Preset", f"Novo nome para '{nome_antigo}':",
+                               on_name_entered, valor_inicial=nome_antigo)
 
     def atualizar_lista_presets_ui(self):
         for child in self.scroll_presets.winfo_children():
