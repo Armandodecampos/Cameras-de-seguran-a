@@ -319,18 +319,13 @@ class CentralMonitoramento(ctk.CTk):
         for i in range(4): self.grid_frame.grid_rowconfigure(i, weight=1)
         for i in range(5): self.grid_frame.grid_columnconfigure(i, weight=1)
 
-        # Botão Aumentar/Diminuir
-        self.btn_expandir = ctk.CTkButton(self.grid_frame, text="Aumentar", width=100, height=35,
-                                           fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
-                                           corner_radius=0, command=self.toggle_grid_layout)
+        # Botões de Controle
+        self.btn_opcoes = ctk.CTkButton(self.grid_frame, text="Opções", width=100, height=35,
+                                         fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                         corner_radius=0, command=self.abrir_menu_opcoes)
 
-        self.btn_limpar_slot = ctk.CTkButton(self.grid_frame, text="🗑", command=self.limpar_slot_atual,
-                                             fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
-                                             corner_radius=0, width=40)
-
-        self.btn_renomear = ctk.CTkButton(self.grid_frame, text="✎", command=self.alternar_edicao_nome,
-                                        fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
-                                        corner_radius=0, width=40, state="disabled")
+        # Referências mantidas para compatibilidade de lógica, mas não serão placed diretamente
+        self.btn_expandir = ctk.CTkButton(self, text="Aumentar", command=self.toggle_grid_layout)
 
         self.slot_frames = []
         self.slot_labels = []
@@ -578,7 +573,7 @@ class CentralMonitoramento(ctk.CTk):
                 # Opcional: handler.set_canal(102) # Já deve estar em 102
 
         self.slot_maximized = index
-        self.btn_expandir.lift()
+        self.btn_opcoes.lift()
 
     def ao_pressionar_slot(self, event, index):
         self.selecionar_slot(index)
@@ -657,7 +652,7 @@ class CentralMonitoramento(ctk.CTk):
                 handler.set_canal(102) # Volta para Sub Stream
 
         self.slot_maximized = None
-        self.btn_expandir.lift()
+        self.btn_opcoes.lift()
 
     def selecionar_slot(self, index):
         if not (0 <= index < 20): return
@@ -673,7 +668,6 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_frames[index].configure(border_color=self.ACCENT_RED, border_width=2)
 
         self.title(f"Monitoramento ABI - Espaço {index + 1} selecionado")
-        self.btn_renomear.configure(text="✎")
 
         ip_novo = self.grid_cameras[index]
         if ip_novo and ip_novo != "0.0.0.0":
@@ -681,30 +675,19 @@ class CentralMonitoramento(ctk.CTk):
             self.ip_selecionado = ip_novo
             nome = self.dados_cameras.get(ip_novo, "")
             self.pintar_botao(ip_novo, self.ACCENT_WINE)
-            self.btn_renomear.configure(state="normal")
 
             # Ativa overlay no handler
             handler = self.camera_handlers.get(ip_novo)
             if handler and handler != "CONECTANDO":
                 handler.set_exibir_info(True)
 
-            txt = "Diminuir" if self.slot_maximized == index else "Aumentar"
-            self.btn_expandir.configure(text=txt)
-
-            # Ordem: Excluir, Editar, Aumentar (da esquerda para direita no canto inferior direito)
-            self.btn_limpar_slot.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-185, y=-10, anchor="se")
-            self.btn_renomear.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-140, y=-10, anchor="se")
-            self.btn_expandir.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
-            self.btn_expandir.lift()
-            self.btn_renomear.lift()
-            self.btn_limpar_slot.lift()
+            # Só o botão de Opções aparece agora no slot
+            self.btn_opcoes.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
+            self.btn_opcoes.lift()
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
-            self.btn_renomear.configure(state="disabled")
-            self.btn_expandir.place_forget()
-            self.btn_renomear.place_forget()
-            self.btn_limpar_slot.place_forget()
+            self.btn_opcoes.place_forget()
         self.atualizar_botoes_controle()
 
     def limpar_slot_atual(self):
@@ -721,9 +704,7 @@ class CentralMonitoramento(ctk.CTk):
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
         
-        self.btn_expandir.place_forget()
-        self.btn_renomear.place_forget()
-        self.btn_limpar_slot.place_forget()
+        self.btn_opcoes.place_forget()
         
         if self.slot_maximized == idx: self.restaurar_grid()
         self.selecionar_slot(idx)
@@ -761,6 +742,53 @@ class CentralMonitoramento(ctk.CTk):
         if self.slot_maximized is not None: self.restaurar_grid()
         else: self.maximizar_slot(self.slot_selecionado)
         self.atualizar_botoes_controle()
+
+    def abrir_menu_opcoes(self):
+        if not self.ip_selecionado: return
+
+        nome = self.dados_cameras.get(self.ip_selecionado, "Câmera Sem Nome")
+        ip = self.ip_selecionado
+
+        # Cria a janela modal
+        modal = ctk.CTkToplevel(self)
+        modal.title(f"Opções - {ip}")
+        modal.geometry("400x350")
+        modal.resizable(False, False)
+        modal.attributes("-topmost", True)
+
+        # Tenta centralizar a janela em relação à aplicação
+        try:
+            self.update_idletasks()
+            x = self.winfo_x() + (self.winfo_width() // 2) - 200
+            y = self.winfo_y() + (self.winfo_height() // 2) - 175
+            modal.geometry(f"+{x}+{y}")
+        except: pass
+
+        # Conteúdo
+        ctk.CTkLabel(modal, text=nome if nome else "Sem Nome", font=("Roboto", 18, "bold"), text_color=self.TEXT_P).pack(pady=(20, 5))
+        ctk.CTkLabel(modal, text=ip, font=("Roboto", 14), text_color=self.TEXT_S).pack(pady=(0, 20))
+
+        # Botões com canto quadrado (corner_radius=0)
+        btn_excluir = ctk.CTkButton(modal, text="Excluir", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                     corner_radius=0, height=40,
+                                     command=lambda: [self.limpar_slot_atual(), modal.destroy()])
+        btn_excluir.pack(fill="x", padx=40, pady=5)
+
+        btn_editar = ctk.CTkButton(modal, text="Editar", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                    corner_radius=0, height=40,
+                                    command=lambda: [modal.destroy(), self.alternar_edicao_nome()])
+        btn_editar.pack(fill="x", padx=40, pady=5)
+
+        txt_exp = "Diminuir" if self.slot_maximized == self.slot_selecionado else "Aumentar"
+        btn_expandir_modal = ctk.CTkButton(modal, text=txt_exp, fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                            corner_radius=0, height=40,
+                                            command=lambda: [self.toggle_grid_layout(), modal.destroy()])
+        btn_expandir_modal.pack(fill="x", padx=40, pady=5)
+
+        btn_fechar = ctk.CTkButton(modal, text="Fechar", fg_color="#444444", hover_color="#666666",
+                                    corner_radius=0, height=40,
+                                    command=modal.destroy)
+        btn_fechar.pack(fill="x", padx=40, pady=(20, 0))
 
     def recriar_label_slot(self, idx):
         """Recria o CTkLabel de um slot para limpar estados corrompidos do Tcl/Tkinter."""
@@ -1017,8 +1045,8 @@ class CentralMonitoramento(ctk.CTk):
                     # print(f"Erro render slot {i}: {e}")
                     pass
 
-            if self.btn_expandir.winfo_ismapped():
-                self.btn_expandir.lift()
+            if self.btn_opcoes.winfo_ismapped():
+                self.btn_opcoes.lift()
 
         except Exception as e: print(f"Erro no loop de exibição: {e}")
         finally: self.after(40, self.loop_exibicao)
