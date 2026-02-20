@@ -33,6 +33,7 @@ class CameraHandler:
         self.interpolation = cv2.INTER_NEAREST
         self.ip_display = ip
         self.nome_display = ""
+        self.exibir_info = False
         self.prioridade = False
         self.necessita_reconexao = False
 
@@ -45,6 +46,10 @@ class CameraHandler:
     def set_prioridade(self, estado):
         with self.lock:
             self.prioridade = estado
+
+    def set_exibir_info(self, estado):
+        with self.lock:
+            self.exibir_info = estado
 
     def set_canal(self, novo_canal):
         with self.lock:
@@ -131,14 +136,11 @@ class CameraHandler:
                     else:
                         frame_res = frame
 
-                    # Adiciona Nome e IP para debug visual apenas se houver espaço
-                    if h > 50:
-                        if self.nome_display:
-                            cv2.putText(frame_res, self.nome_display, (10, h - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                            cv2.putText(frame_res, self.nome_display, (10, h - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
-
-                        cv2.putText(frame_res, self.ip_display, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
-                        cv2.putText(frame_res, self.ip_display, (10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+                    # Adiciona Nome e IP para debug visual apenas se houver espaço e estiver habilitado
+                    if h > 50 and self.exibir_info:
+                        info = f"{self.nome_display} - {self.ip_display}" if self.nome_display else self.ip_display
+                        cv2.putText(frame_res, info, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0), 2)
+                        cv2.putText(frame_res, info, (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
 
                     rgb = cv2.cvtColor(frame_res, cv2.COLOR_BGR2RGB)
                     pil_img = Image.fromarray(rgb)
@@ -325,33 +327,32 @@ class CentralMonitoramento(ctk.CTk):
 
         self.slot_frames = []
         self.slot_labels = []
-        self.slot_name_labels = []
         for i in range(20):
             row, col = i // 5, i % 5
             frm = ctk.CTkFrame(self.grid_frame, fg_color=self.BG_SIDEBAR, corner_radius=2, border_width=2, border_color="black")
             frm.grid(row=row, column=col, padx=1, pady=1, sticky="nsew")
             frm.pack_propagate(False)
 
-            lbl_nome = ctk.CTkLabel(frm, text="", font=("Roboto", 11, "bold"), text_color=self.TEXT_P, fg_color="#000000", height=20)
-            lbl_nome.pack(side="top", fill="x")
-            self.slot_name_labels.append(lbl_nome)
-
             lbl = ctk.CTkLabel(frm, text=f"Espaço {i+1}", corner_radius=0)
             lbl.pack(expand=True, fill="both", padx=2, pady=2)
 
-            for widget in [frm, lbl, lbl_nome]:
+            for widget in [frm, lbl]:
                 widget.bind("<Button-1>", lambda e, idx=i: self.ao_pressionar_slot(e, idx))
                 widget.bind("<ButtonRelease-1>", lambda e, idx=i: self.ao_soltar_slot(e, idx))
 
             self.slot_frames.append(frm)
             self.slot_labels.append(lbl)
 
+        # Label dinâmico para Nome - IP (Overlay)
+        self.lbl_info_slot = ctk.CTkLabel(self.grid_frame, text="", font=("Roboto", 12, "bold"),
+                                          text_color=self.TEXT_P, fg_color="black", corner_radius=4)
+
         self.criar_botoes_iniciais()
         # Restaura estado inicial
         for i, ip in enumerate(self.grid_cameras):
             if ip and ip != "0.0.0.0":
-                self.slot_labels[i].configure(text=f"AGUARDANDO\n{ip}")
-                self.slot_name_labels[i].configure(text=self.dados_cameras.get(ip, ""))
+                # O IP é ocultado por padrão se não selecionado
+                self.slot_labels[i].configure(text="AGUARDANDO")
 
         self.selecionar_slot(self.slot_selecionado)
         self.restaurar_grid()
@@ -657,6 +658,11 @@ class CentralMonitoramento(ctk.CTk):
 
     def selecionar_slot(self, index):
         if not (0 <= index < 20): return
+
+        # Desliga info de todos os handlers antes de trocar
+        for ip_h, h in self.camera_handlers.items():
+            if h != "CONECTANDO": h.set_exibir_info(False)
+
         for frm in self.slot_frames: frm.configure(border_color="black", border_width=2)
 
         ip_anterior = self.ip_selecionado
@@ -673,6 +679,18 @@ class CentralMonitoramento(ctk.CTk):
             nome = self.dados_cameras.get(ip_novo, "")
             self.pintar_botao(ip_novo, self.ACCENT_WINE)
             self.btn_renomear.configure(state="normal")
+
+            # Ativa overlay no handler
+            handler = self.camera_handlers.get(ip_novo)
+            if handler and handler != "CONECTANDO":
+                handler.set_exibir_info(True)
+
+            # Configura e posiciona o label de info dinâmico
+            info_txt = f"{nome} - {ip_novo}" if nome else ip_novo
+            self.lbl_info_slot.configure(text=info_txt)
+            self.lbl_info_slot.place(in_=self.slot_frames[index], relx=0.0, rely=0.0, x=10, y=10, anchor="nw")
+            self.lbl_info_slot.lift()
+
             txt = "Diminuir" if self.slot_maximized == index else "Aumentar"
             self.btn_expandir.configure(text=txt)
             self.btn_expandir.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
@@ -685,6 +703,7 @@ class CentralMonitoramento(ctk.CTk):
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
             self.btn_renomear.configure(state="disabled")
+            self.lbl_info_slot.place_forget()
             self.btn_expandir.place_forget()
             self.btn_renomear.place_forget()
             self.btn_limpar_slot.place_forget()
@@ -704,6 +723,7 @@ class CentralMonitoramento(ctk.CTk):
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
         
+        self.lbl_info_slot.place_forget()
         self.btn_expandir.place_forget()
         self.btn_renomear.place_forget()
         self.btn_limpar_slot.place_forget()
@@ -785,15 +805,16 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_cameras[idx] = ip
         
         # 1. Limpeza visual ultra-robusta
-        txt = f"Espaço {idx+1}" if (not ip or ip == "0.0.0.0") else f"CONECTANDO...\n{ip}"
+        # Só mostra IP se for o slot selecionado
+        if not ip or ip == "0.0.0.0":
+            txt = f"Espaço {idx+1}"
+        else:
+            txt = f"CONECTANDO...\n{ip}" if idx == self.slot_selecionado else "CONECTANDO..."
 
         try:
             # Tenta configurar o label existente
             self.slot_labels[idx].configure(image=self.img_vazia, text=txt)
             self.slot_labels[idx].image = self.img_vazia
-            # Atualiza o nome da câmera no slot
-            nome = self.dados_cameras.get(ip, "") if ip != "0.0.0.0" else ""
-            self.slot_name_labels[idx].configure(text=nome)
             # Limpa cache do slot para evitar fantasmas ou falhas de sincronia
             self.slot_ctk_images[idx] = None
         except Exception as e:
@@ -936,8 +957,9 @@ class CentralMonitoramento(ctk.CTk):
                 if ip in self.cooldown_conexoes:
                     if agora - self.cooldown_conexoes[ip] < 10:
                         try:
-                            if self.slot_labels[i].image != self.img_vazia:
-                                self.slot_labels[i].configure(image=self.img_vazia, text=f"FALHA CONEXÃO\n{ip}")
+                            target_status = f"FALHA CONEXÃO\n{ip}" if i == self.slot_selecionado else "FALHA CONEXÃO"
+                            if self.slot_labels[i].image != self.img_vazia or self.slot_labels[i].cget("text") != target_status:
+                                self.slot_labels[i].configure(image=self.img_vazia, text=target_status)
                                 self.slot_labels[i].image = self.img_vazia
                                 self.slot_ctk_images[i] = None
                         except: pass
@@ -950,6 +972,9 @@ class CentralMonitoramento(ctk.CTk):
                     self.iniciar_conexao_assincrona(ip, canal_alvo)
                     continue
                 if handler == "CONECTANDO":
+                    target_status = f"CONECTANDO...\n{ip}" if i == self.slot_selecionado else "CONECTANDO..."
+                    if self.slot_labels[i].cget("text") != target_status:
+                        self.slot_labels[i].configure(text=target_status)
                     continue
 
                 try:
@@ -1031,10 +1056,9 @@ class CentralMonitoramento(ctk.CTk):
             if handler and handler != "CONECTANDO":
                 handler.nome_display = novo_nome
 
-            # Atualiza os labels nos slots que contém este IP
-            for i, ip in enumerate(self.grid_cameras):
-                if ip == self.ip_selecionado:
-                    self.slot_name_labels[i].configure(text=novo_nome)
+            # Atualiza o label dinâmico se for a câmera selecionada
+            info_txt = f"{novo_nome} - {self.ip_selecionado}" if novo_nome else self.ip_selecionado
+            self.lbl_info_slot.configure(text=info_txt)
 
             self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
             self.filtrar_lista()
