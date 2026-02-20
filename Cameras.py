@@ -320,12 +320,13 @@ class CentralMonitoramento(ctk.CTk):
         for i in range(5): self.grid_frame.grid_columnconfigure(i, weight=1)
 
         # Botões de Controle
-        self.btn_opcoes = ctk.CTkButton(self.grid_frame, text="Opções", width=100, height=35,
-                                         fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
-                                         corner_radius=0, command=self.abrir_menu_opcoes)
+        self.btn_expandir = ctk.CTkButton(self.grid_frame, text="Aumentar", width=100, height=35,
+                                           fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                           corner_radius=0, command=self.toggle_grid_layout)
 
-        # Referências mantidas para compatibilidade de lógica, mas não serão placed diretamente
-        self.btn_expandir = ctk.CTkButton(self, text="Aumentar", command=self.toggle_grid_layout)
+        self.btn_mais_opcoes = ctk.CTkButton(self.grid_frame, text="Mais Opções", width=100, height=35,
+                                              fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                              corner_radius=0, command=self.abrir_menu_opcoes)
 
         self.slot_frames = []
         self.slot_labels = []
@@ -573,7 +574,8 @@ class CentralMonitoramento(ctk.CTk):
                 # Opcional: handler.set_canal(102) # Já deve estar em 102
 
         self.slot_maximized = index
-        self.btn_opcoes.lift()
+        self.btn_expandir.lift()
+        self.btn_mais_opcoes.lift()
 
     def ao_pressionar_slot(self, event, index):
         self.selecionar_slot(index)
@@ -652,7 +654,8 @@ class CentralMonitoramento(ctk.CTk):
                 handler.set_canal(102) # Volta para Sub Stream
 
         self.slot_maximized = None
-        self.btn_opcoes.lift()
+        self.btn_expandir.lift()
+        self.btn_mais_opcoes.lift()
 
     def selecionar_slot(self, index):
         if not (0 <= index < 20): return
@@ -681,13 +684,21 @@ class CentralMonitoramento(ctk.CTk):
             if handler and handler != "CONECTANDO":
                 handler.set_exibir_info(True)
 
-            # Só o botão de Opções aparece agora no slot
-            self.btn_opcoes.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
-            self.btn_opcoes.lift()
+            # Botões de Controle: Aumentar e Mais Opções
+            txt_exp = "Diminuir" if self.slot_maximized == index else "Aumentar"
+            self.btn_expandir.configure(text=txt_exp)
+
+            # Ordem: Aumentar (Esquerda) | Mais Opções (Direita)
+            self.btn_expandir.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-115, y=-10, anchor="se")
+            self.btn_mais_opcoes.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
+
+            self.btn_expandir.lift()
+            self.btn_mais_opcoes.lift()
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
-            self.btn_opcoes.place_forget()
+            self.btn_expandir.place_forget()
+            self.btn_mais_opcoes.place_forget()
         self.atualizar_botoes_controle()
 
     def limpar_slot_atual(self):
@@ -704,7 +715,8 @@ class CentralMonitoramento(ctk.CTk):
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
         
-        self.btn_opcoes.place_forget()
+        self.btn_expandir.place_forget()
+        self.btn_mais_opcoes.place_forget()
         
         if self.slot_maximized == idx: self.restaurar_grid()
         self.selecionar_slot(idx)
@@ -778,12 +790,6 @@ class CentralMonitoramento(ctk.CTk):
                                     corner_radius=0, height=40,
                                     command=lambda: [modal.destroy(), self.alternar_edicao_nome()])
         btn_editar.pack(fill="x", padx=40, pady=5)
-
-        txt_exp = "Diminuir" if self.slot_maximized == self.slot_selecionado else "Aumentar"
-        btn_expandir_modal = ctk.CTkButton(modal, text=txt_exp, fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
-                                            corner_radius=0, height=40,
-                                            command=lambda: [self.toggle_grid_layout(), modal.destroy()])
-        btn_expandir_modal.pack(fill="x", padx=40, pady=5)
 
         btn_fechar = ctk.CTkButton(modal, text="Fechar", fg_color="#444444", hover_color="#666666",
                                     corner_radius=0, height=40,
@@ -1045,8 +1051,10 @@ class CentralMonitoramento(ctk.CTk):
                     # print(f"Erro render slot {i}: {e}")
                     pass
 
-            if self.btn_opcoes.winfo_ismapped():
-                self.btn_opcoes.lift()
+            if self.btn_expandir.winfo_ismapped():
+                self.btn_expandir.lift()
+            if self.btn_mais_opcoes.winfo_ismapped():
+                self.btn_mais_opcoes.lift()
 
         except Exception as e: print(f"Erro no loop de exibição: {e}")
         finally: self.after(40, self.loop_exibicao)
