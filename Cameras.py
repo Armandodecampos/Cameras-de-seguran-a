@@ -1056,7 +1056,7 @@ class CentralMonitoramento(ctk.CTk):
             scaling = self._get_window_scaling()
             indices_trabalho = [self.slot_maximized] if self.slot_maximized is not None else range(20)
 
-            # Mapeia quais IPs estão sendo processados para compartilhar a CTkImage se possível
+            # Mapeia quais IPs estão sendo processados para compartilhar o frame se possível
             current_ips_pil = {}
 
             for i in range(20):
@@ -1108,36 +1108,41 @@ class CentralMonitoramento(ctk.CTk):
                     wf = int(max(10, wf - 6))
                     hf = int(max(10, hf - 6))
 
-                    handler.tamanho_alvo = (wf, hf)
-                    handler.interpolation = cv2.INTER_LINEAR if self.slot_maximized == i else cv2.INTER_NEAREST
+                    # Para evitar que múltiplos slots com o mesmo IP causem redimensionamentos conflitantes,
+                    # apenas o primeiro slot encontrado define o tamanho alvo do handler.
+                    # No grid normal, todos os slots têm o mesmo tamanho.
+                    if ip not in current_ips_pil:
+                        handler.tamanho_alvo = (wf, hf)
+                        handler.interpolation = cv2.INTER_LINEAR if self.slot_maximized == i else cv2.INTER_NEAREST
 
-                    if handler.novo_frame:
+                    # Recupera o frame (se já não foi pego para este IP nesta iteração)
+                    if ip in current_ips_pil:
+                        pil_img = current_ips_pil[ip]
+                    elif handler.novo_frame:
                         pil_img = handler.pegar_frame()
-                        if pil_img:
-                            wl, hl = wf / scaling, hf / scaling
+                        current_ips_pil[ip] = pil_img
+                    else:
+                        pil_img = None
 
-                            try:
-                                # Abordagem de criação direta para garantir atualização (testando se resolve 'dark screen')
-                                # Mas mantendo cache para não explodir pyimages
-                                if self.slot_ctk_images[i] is None:
-                                    self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
-                                    # print(f"DEBUG: Slot {i} ({ip}) - Primeiro Frame ({pil_img.size})")
-                                else:
-                                    # Tenta atualizar o objeto existente
-                                    self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                    if pil_img:
+                        wl, hl = wf / scaling, hf / scaling
+                        try:
+                            # Abordagem de criação direta para garantir atualização (testando se resolve 'dark screen')
+                            # Mas mantendo cache para não explodir pyimages
+                            if self.slot_ctk_images[i] is None:
+                                self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                            else:
+                                # Tenta atualizar o objeto existente
+                                self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
 
-                                # SEMPRE garante que o label está apontando para o objeto de cache e sem texto
-                                if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
-                                    self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
-                                    self.slot_labels[i].image = self.slot_ctk_images[i]
-                            except Exception as e:
-                                # print(f"DEBUG: Erro ao renderizar frame no slot {i}: {e}")
-                                # Se falhar muito, tentamos recriar o cache do slot
-                                self.slot_ctk_images[i] = None
+                            # SEMPRE garante que o label está apontando para o objeto de cache e sem texto
+                            if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
+                                self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
+                                self.slot_labels[i].image = self.slot_ctk_images[i]
+                        except Exception as e:
+                            self.slot_ctk_images[i] = None
                     else:
                         # Stream aberto mas sem frames (pode estar carregando ou com erro de codec)
-                        # if i % 100 == 0: # Log esparso para não inundar
-                        #     print(f"DEBUG: Slot {i} ({ip}) - Aguardando frame válido...")
                         pass
 
                 except Exception as e:
@@ -1238,12 +1243,12 @@ class CentralMonitoramento(ctk.CTk):
         def on_name_entered(nome):
             if nome:
                 if nome in self.presets:
-                    self.abrir_modal_confirmacao("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?",
+                    self.abrir_modal_confirmacao("Confirmar", f"A predefinição '{nome}' já existe. Deseja sobrescrevê-la?",
                                                  lambda: self._salvar_preset(nome))
                 else:
                     self._salvar_preset(nome)
 
-        self.abrir_modal_input("Salvar Preset", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_preset(self, nome):
         self.presets[nome] = list(self.grid_cameras)
@@ -1303,7 +1308,7 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_preset(nome))
 
     def _sobrescrever_preset(self, nome):
@@ -1313,7 +1318,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_presets_ui()
 
     def deletar_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o preset '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_preset(nome))
 
     def _deletar_preset(self, nome):
@@ -1328,7 +1333,7 @@ class CentralMonitoramento(ctk.CTk):
         def on_name_entered(novo_nome):
             if novo_nome and novo_nome != nome_antigo:
                 if novo_nome in self.presets:
-                    self.abrir_modal_alerta("Erro", "Já existe um preset com este nome.")
+                    self.abrir_modal_alerta("Erro", "Já existe uma predefinição com este nome.")
                     return
                 self.presets[novo_nome] = self.presets.pop(nome_antigo)
                 if self.ultimo_preset == nome_antigo:
@@ -1336,7 +1341,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.salvar_presets()
                 self.atualizar_lista_presets_ui()
 
-        self.abrir_modal_input("Renomear Preset", f"Novo nome para '{nome_antigo}':",
+        self.abrir_modal_input("Renomear Predefinição", f"Novo nome para '{nome_antigo}':",
                                on_name_entered, valor_inicial=nome_antigo)
 
     def atualizar_lista_presets_ui(self):
