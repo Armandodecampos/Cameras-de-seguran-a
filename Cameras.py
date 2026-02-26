@@ -1232,18 +1232,22 @@ class CentralMonitoramento(ctk.CTk):
             with open(self.arquivo_presets, "w", encoding='utf-8') as f:
                 json.dump(self.presets, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"Erro ao salvar presets: {e}")
+            print(f"Erro ao salvar predefinições: {e}")
 
     def salvar_preset_atual(self):
         def on_name_entered(nome):
-            if nome:
-                if nome in self.presets:
-                    self.abrir_modal_confirmacao("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?",
-                                                 lambda: self._salvar_preset(nome))
-                else:
-                    self._salvar_preset(nome)
+            nome = nome.strip()
+            if not nome:
+                self.abrir_modal_alerta("Erro", "O nome da predefinição não pode estar vazio.")
+                return
 
-        self.abrir_modal_input("Salvar Preset", "Digite um nome para esta predefinição:", on_name_entered)
+            if nome in self.presets:
+                self.abrir_modal_confirmacao("Confirmar", f"A predefinição '{nome}' já existe. Deseja sobrescrevê-la?",
+                                             lambda: self._salvar_preset(nome))
+            else:
+                self._salvar_preset(nome)
+
+        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_preset(self, nome):
         self.presets[nome] = list(self.grid_cameras)
@@ -1303,7 +1307,7 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_preset(nome))
 
     def _sobrescrever_preset(self, nome):
@@ -1313,7 +1317,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_presets_ui()
 
     def deletar_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o preset '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_preset(nome))
 
     def _deletar_preset(self, nome):
@@ -1326,17 +1330,25 @@ class CentralMonitoramento(ctk.CTk):
 
     def renomear_preset(self, nome_antigo):
         def on_name_entered(novo_nome):
-            if novo_nome and novo_nome != nome_antigo:
-                if novo_nome in self.presets:
-                    self.abrir_modal_alerta("Erro", "Já existe um preset com este nome.")
-                    return
-                self.presets[novo_nome] = self.presets.pop(nome_antigo)
-                if self.ultimo_preset == nome_antigo:
-                    self.ultimo_preset = novo_nome
-                self.salvar_presets()
-                self.atualizar_lista_presets_ui()
+            novo_nome = novo_nome.strip()
+            if not novo_nome:
+                self.abrir_modal_alerta("Erro", "O nome da predefinição não pode estar vazio.")
+                return
 
-        self.abrir_modal_input("Renomear Preset", f"Novo nome para '{nome_antigo}':",
+            if novo_nome == nome_antigo:
+                return
+
+            if novo_nome in self.presets:
+                self.abrir_modal_alerta("Erro", "Já existe uma predefinição com este nome.")
+                return
+
+            self.presets[novo_nome] = self.presets.pop(nome_antigo)
+            if self.ultimo_preset == nome_antigo:
+                self.ultimo_preset = novo_nome
+            self.salvar_presets()
+            self.atualizar_lista_presets_ui()
+
+        self.abrir_modal_input("Renomear Predefinição", f"Novo nome para '{nome_antigo}':",
                                on_name_entered, valor_inicial=nome_antigo)
 
     def atualizar_lista_presets_ui(self):
