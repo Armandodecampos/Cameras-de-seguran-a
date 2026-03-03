@@ -1,6 +1,6 @@
 import os
-# Configuração de baixa latência para OpenCV/FFMPEG
-os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;stimeout;3000000;buffer_size;1024000;analyzeduration;50000;probesize;50000;fflags;nobuffer+discardcorrupt;flags;low_delay;max_delay;500000;reorder_queue_size;8;rtsp_flags;prefer_tcp;reconnect;1;reconnect_streamed;1;reconnect_at_eof;1"
+# Configuração de baixa latência para OpenCV/FFMPEG - Balanceada para Estabilidade
+os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;stimeout;5000000;buffer_size;2048000;analyzeduration;100000;probesize;100000;fflags;discardcorrupt;max_delay;500000;reorder_queue_size;16;rtsp_flags;prefer_tcp;reconnect;1;reconnect_streamed;1;reconnect_at_eof;1"
 
 import cv2
 import customtkinter as ctk
@@ -156,7 +156,7 @@ class CameraHandler:
                     time.sleep(0.01)
             else:
                 consecutive_failures += 1
-                if consecutive_failures > 100:
+                if consecutive_failures > 300:
                     print(f"LOG: Camera {self.ip_display} sem frames. Tentando reconectar...")
                     if self.cap: self.cap.release()
                     self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
@@ -393,12 +393,10 @@ class CentralMonitoramento(ctk.CTk):
     def _processar_fila_conexoes_pendentes(self):
         while True:
             try:
-                # Processa múltiplos itens se disponíveis para maior rapidez
-                count = 0
-                while not self.fila_pendente_conexoes.empty() and count < 5:
+                # Processa todos os itens pendentes na fila imediatamente
+                while not self.fila_pendente_conexoes.empty():
                     ip, canal = self.fila_pendente_conexoes.get()
                     self.ips_em_fila.discard(ip)
-                    count += 1
 
                     # Verifica se o IP ainda está no grid
                     if ip not in self.grid_cameras:
