@@ -280,7 +280,7 @@ class CentralMonitoramento(ctk.CTk):
         self.entry_busca.pack(fill="x", expand=True)
         self.entry_busca.bind("<KeyRelease>", lambda e: self.filtrar_lista())
 
-        self.btn_toggle_qualidade = ctk.CTkButton(tab_cams, text="Qualidade: Automática",
+        self.btn_toggle_qualidade = ctk.CTkButton(tab_cams, text="Qualidade: Máxima",
                                                fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
                                                corner_radius=0, command=self.alternar_qualidade_global)
         self.btn_toggle_qualidade.pack(fill="x", padx=5, pady=5)
@@ -978,11 +978,7 @@ class CentralMonitoramento(ctk.CTk):
     def obter_canal_alvo(self, ip):
         if self.forcar_baixa_qualidade:
             return 102
-        # Se o IP for o mesmo da câmera maximizada, usa alta qualidade
-        if self.slot_maximized is not None:
-            if self.grid_cameras[self.slot_maximized] == ip:
-                return 101
-        return 102
+        return 101
 
     def alternar_qualidade_global(self):
         self.forcar_baixa_qualidade = not self.forcar_baixa_qualidade
@@ -990,7 +986,7 @@ class CentralMonitoramento(ctk.CTk):
         if self.forcar_baixa_qualidade:
             self.btn_toggle_qualidade.configure(text="Qualidade: Reduzida", fg_color=self.ACCENT_WINE)
         else:
-            self.btn_toggle_qualidade.configure(text="Qualidade: Automática", fg_color=self.GRAY_DARK)
+            self.btn_toggle_qualidade.configure(text="Qualidade: Máxima", fg_color=self.GRAY_DARK)
 
         # Atualiza todas as câmeras ativas
         for ip, handler in self.camera_handlers.items():
