@@ -1240,14 +1240,17 @@ class CentralMonitoramento(ctk.CTk):
 
     def salvar_preset_atual(self):
         def on_name_entered(nome):
+            nome = nome.strip()
             if nome:
                 if nome in self.presets:
-                    self.abrir_modal_confirmacao("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?",
+                    self.abrir_modal_confirmacao("Confirmar", f"A predefinição '{nome}' já existe. Deseja sobrescrevê-la?",
                                                  lambda: self._salvar_preset(nome))
                 else:
                     self._salvar_preset(nome)
+            else:
+                self.abrir_modal_alerta("Aviso", "O nome da predefinição não pode estar vazio.")
 
-        self.abrir_modal_input("Salvar Preset", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_preset(self, nome):
         self.presets[nome] = list(self.grid_cameras)
@@ -1306,7 +1309,7 @@ class CentralMonitoramento(ctk.CTk):
         self.update_idletasks()
 
     def sobrescrever_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_preset(nome))
 
     def _sobrescrever_preset(self, nome):
@@ -1316,7 +1319,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_presets_ui()
 
     def deletar_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o preset '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_preset(nome))
 
     def _deletar_preset(self, nome):
@@ -1329,17 +1332,21 @@ class CentralMonitoramento(ctk.CTk):
 
     def renomear_preset(self, nome_antigo):
         def on_name_entered(novo_nome):
+            novo_nome = novo_nome.strip()
             if novo_nome and novo_nome != nome_antigo:
                 if novo_nome in self.presets:
-                    self.abrir_modal_alerta("Erro", "Já existe um preset com este nome.")
+                    self.abrir_modal_alerta("Erro", "Já existe uma predefinição com este nome.")
                     return
-                self.presets[novo_nome] = self.presets.pop(nome_antigo)
-                if self.ultimo_preset == nome_antigo:
-                    self.ultimo_preset = novo_nome
-                self.salvar_presets()
-                self.atualizar_lista_presets_ui()
+                if nome_antigo in self.presets:
+                    self.presets[novo_nome] = self.presets.pop(nome_antigo)
+                    if self.ultimo_preset == nome_antigo:
+                        self.ultimo_preset = novo_nome
+                    self.salvar_presets()
+                    self.atualizar_lista_presets_ui()
+            elif not novo_nome:
+                self.abrir_modal_alerta("Aviso", "O nome da predefinição não pode estar vazio.")
 
-        self.abrir_modal_input("Renomear Preset", f"Novo nome para '{nome_antigo}':",
+        self.abrir_modal_input("Renomear Predefinição", f"Novo nome para '{nome_antigo}':",
                                on_name_entered, valor_inicial=nome_antigo)
 
     def atualizar_lista_presets_ui(self):
@@ -1353,7 +1360,20 @@ class CentralMonitoramento(ctk.CTk):
             frm.pack(fill="x", pady=2, padx=2)
             frm.pack_propagate(False)
 
-            # Label
+            # Botões de controle (X, ✎, 💾) empacotados à direita primeiro para garantir visibilidade
+            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
+                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
+            btn_del.pack(side="right", padx=5)
+
+            btn_ren = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
+            btn_ren.pack(side="right", padx=2)
+
+            btn_save = ctk.CTkButton(frm, text="💾", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.sobrescrever_preset(n))
+            btn_save.pack(side="right", padx=2)
+
+            # Label (empacotado por último para ocupar o espaço restante)
             lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w", cursor="hand2")
             lbl.pack(side="left", expand=True, fill="both", padx=10)
 
@@ -1361,18 +1381,6 @@ class CentralMonitoramento(ctk.CTk):
             frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
             frm.configure(cursor="hand2")
-
-            btn_save = ctk.CTkButton(frm, text="💾", width=30, height=30, fg_color=self.GRAY_DARK,
-                                     hover_color=self.TEXT_S, command=lambda n=nome: self.sobrescrever_preset(n))
-            btn_save.pack(side="right", padx=2)
-
-            btn_ren = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
-                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
-            btn_ren.pack(side="right", padx=2)
-
-            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
-                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
-            btn_del.pack(side="right", padx=5)
 
             self.preset_widgets[nome] = frm
 
