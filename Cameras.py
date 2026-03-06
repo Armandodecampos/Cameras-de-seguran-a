@@ -237,6 +237,7 @@ class CentralMonitoramento(ctk.CTk):
         self.tecla_pressionada = None
         self.ultimo_preset = None
         self.aba_ativa = "Câmeras"
+        self.forcar_baixa_qualidade = False
 
         self.carregar_posicao_janela()
         self.presets = self.carregar_presets()
@@ -278,6 +279,11 @@ class CentralMonitoramento(ctk.CTk):
         self.entry_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="Filtrar...")
         self.entry_busca.pack(fill="x", expand=True)
         self.entry_busca.bind("<KeyRelease>", lambda e: self.filtrar_lista())
+
+        self.btn_toggle_qualidade = ctk.CTkButton(tab_cams, text="Qualidade: Automática",
+                                               fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                               corner_radius=0, command=self.alternar_qualidade_global)
+        self.btn_toggle_qualidade.pack(fill="x", padx=5, pady=5)
 
         self.scroll_frame = ctk.CTkScrollableFrame(tab_cams, fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=0, pady=5)
@@ -569,17 +575,18 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 frm.grid_forget()
 
+        self.slot_maximized = index
+
         # Gerenciamento de Prioridade e Qualidade
         for ip, handler in self.camera_handlers.items():
-            if handler == "CONECTANDO": continue
+            if not handler or handler == "CONECTANDO": continue
+
             if ip == ip_maximized:
                 handler.set_prioridade(True)
-                handler.set_canal(101) # Switch to Main Stream
+                handler.set_canal(self.obter_canal_alvo(ip))
             else:
                 handler.set_prioridade(False)
-                # Opcional: handler.set_canal(102) # Já deve estar em 102
-
-        self.slot_maximized = index
+                handler.set_canal(self.obter_canal_alvo(ip))
         self.btn_expandir.lift()
         self.btn_mais_opcoes.lift()
 
@@ -652,14 +659,14 @@ class CentralMonitoramento(ctk.CTk):
             frm.grid()
             for child in frm.winfo_children(): child.pack_configure(padx=2, pady=2)
 
+        self.slot_maximized = None
+
         # Gerenciamento de Prioridade e Qualidade (Volta tudo ao normal)
         for ip, handler in self.camera_handlers.items():
-            if handler == "CONECTANDO": continue
-            handler.set_prioridade(False)
-            if ip == ip_foco:
-                handler.set_canal(102) # Volta para Sub Stream
+            if not handler or handler == "CONECTANDO": continue
 
-        self.slot_maximized = None
+            handler.set_prioridade(False)
+            handler.set_canal(self.obter_canal_alvo(ip))
         self.btn_expandir.lift()
         self.btn_mais_opcoes.lift()
 
@@ -965,8 +972,31 @@ class CentralMonitoramento(ctk.CTk):
 
             if ip != "0.0.0.0":
                 if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-                canal_alvo = 101 if self.slot_maximized == idx else 102
+                canal_alvo = self.obter_canal_alvo(ip)
                 self.iniciar_conexao_assincrona(ip, canal_alvo)
+
+    def obter_canal_alvo(self, ip):
+        if self.forcar_baixa_qualidade:
+            return 102
+        # Se o IP for o mesmo da câmera maximizada, usa alta qualidade
+        if self.slot_maximized is not None:
+            if self.grid_cameras[self.slot_maximized] == ip:
+                return 101
+        return 102
+
+    def alternar_qualidade_global(self):
+        self.forcar_baixa_qualidade = not self.forcar_baixa_qualidade
+
+        if self.forcar_baixa_qualidade:
+            self.btn_toggle_qualidade.configure(text="Qualidade: Reduzida", fg_color=self.ACCENT_WINE)
+        else:
+            self.btn_toggle_qualidade.configure(text="Qualidade: Automática", fg_color=self.GRAY_DARK)
+
+        # Atualiza todas as câmeras ativas
+        for ip, handler in self.camera_handlers.items():
+            if handler and handler != "CONECTANDO":
+                novo_canal = self.obter_canal_alvo(ip)
+                handler.set_canal(novo_canal)
 
     def selecionar_camera(self, ip):
         # Esta função é chamada ao clicar na lista lateral
@@ -1094,7 +1124,7 @@ class CentralMonitoramento(ctk.CTk):
                 handler = self.camera_handlers.get(ip)
                 if handler is None:
                     # Decide canal inicial dependendo se está maximizado ou não
-                    canal_alvo = 101 if self.slot_maximized == i else 102
+                    canal_alvo = self.obter_canal_alvo(ip)
                     self.iniciar_conexao_assincrona(ip, canal_alvo)
                     continue
                 if handler == "CONECTANDO":
