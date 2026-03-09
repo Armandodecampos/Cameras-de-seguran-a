@@ -18,7 +18,7 @@ sem_conexao = threading.Semaphore(4)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
-    def __init__(self, ip, canal=101, user="admin", password="password"):
+    def __init__(self, ip, canal=102, user="admin", password="password"):
         self.ip = ip
         self.canal = canal
         self.user = user
@@ -588,7 +588,7 @@ class CentralMonitoramento(ctk.CTk):
             if handler == "CONECTANDO": continue
             if ip == ip_maximized:
                 handler.set_prioridade(True)
-                handler.set_canal(101) # Switch to Main Stream
+                handler.set_canal(102) # Mantém Sub Stream (Pedido do Usuário)
             else:
                 handler.set_prioridade(False)
                 # Opcional: handler.set_canal(102) # Já deve estar em 102
@@ -973,7 +973,7 @@ class CentralMonitoramento(ctk.CTk):
 
             if ip != "0.0.0.0":
                 if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-                canal_alvo = 101 if self.slot_maximized == idx else 102
+                canal_alvo = 102 # Sempre usa Sub Stream
                 self.iniciar_conexao_assincrona(ip, canal_alvo)
 
     def selecionar_camera(self, ip):
@@ -993,7 +993,7 @@ class CentralMonitoramento(ctk.CTk):
         if not ip: return
         handler = self.camera_handlers.get(ip)
         if handler and handler != "CONECTANDO":
-            if getattr(handler, 'canal', 101) != novo_canal:
+            if getattr(handler, 'canal', 102) != novo_canal:
                 handler.parar()
                 del self.camera_handlers[ip]
                 self.iniciar_conexao_assincrona(ip, novo_canal)
@@ -1102,7 +1102,7 @@ class CentralMonitoramento(ctk.CTk):
                 handler = self.camera_handlers.get(ip)
                 if handler is None:
                     # Decide canal inicial dependendo se está maximizado ou não
-                    canal_alvo = 101 if self.slot_maximized == i else 102
+                    canal_alvo = 102 # Sempre usa Sub Stream
                     self.iniciar_conexao_assincrona(ip, canal_alvo)
                     continue
                 if handler == "CONECTANDO":
