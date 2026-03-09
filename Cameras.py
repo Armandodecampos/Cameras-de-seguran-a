@@ -13,9 +13,12 @@ from requests.auth import HTTPDigestAuth
 os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;stimeout;5000000;buffer_size;2048000;analyzeduration;100000;probesize;100000;fflags;discardcorrupt;max_delay;500000;reorder_queue_size;16;rtsp_flags;prefer_tcp;reconnect;1;reconnect_streamed;1;reconnect_at_eof;1"
 cv2.setNumThreads(1)
 
+# Semáforo global para limitar conexões simultâneas (evita travamentos)
+sem_conexao = threading.Semaphore(4)
+
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
-    def __init__(self, ip, canal=101, user="admin", password="password"):
+    def __init__(self, ip, canal=102, user="admin", password="password"):
         self.ip = ip
         self.canal = canal
         self.user = user
@@ -59,7 +62,10 @@ class CameraHandler:
     def iniciar(self):
         try:
             print(f"Tentando conectar em: {self.ip_display} (Canal {self.canal})...")
-            self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+
+            # Usa o semáforo para não abrir muitas conexões ao mesmo tempo
+            with sem_conexao:
+                self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
 
             if hasattr(cv2, 'CAP_PROP_OPEN_TIMEOUT_USEC'):
                 try: self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_USEC, 5000000)
@@ -91,7 +97,8 @@ class CameraHandler:
                 with self.lock:
                     print(f"Alterando canal de {self.ip_display} para {self.canal}...")
                     if self.cap: self.cap.release()
-                    self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+                    with sem_conexao:
+                        self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
                     if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
                         try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
                         except: pass
@@ -109,8 +116,8 @@ class CameraHandler:
                 consecutive_failures = 0
                 now = time.time()
 
-                # Controle de FPS Dinâmico
-                target_fps = 25 if self.prioridade else 8
+                # Controle de FPS Dinâmico (Reduzido para 5 em background para economizar CPU)
+                target_fps = 25 if self.prioridade else 5
                 if now - last_process_time < (1.0 / target_fps):
                     continue
 
@@ -155,12 +162,16 @@ class CameraHandler:
                     time.sleep(0.01)
             else:
                 consecutive_failures += 1
-                if consecutive_failures > 100:
+                if consecutive_failures > 50: # Reduzido de 100 para 50 para reagir mais rápido
                     print(f"LOG: Camera {self.ip_display} sem frames. Tentando reconectar...")
                     if self.cap: self.cap.release()
-                    self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+                    with sem_conexao:
+                        self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
                     consecutive_failures = 0
-                time.sleep(0.01)
+
+                # Sleep progressivo em caso de falha para evitar overhead de CPU
+                sleep_time = min(0.2, 0.01 * consecutive_failures)
+                time.sleep(sleep_time)
 
         if self.cap:
             self.cap.release()
@@ -416,10 +427,10 @@ class CentralMonitoramento(ctk.CTk):
                     # print(f"LOG: Iniciando thread de conexão para {ip} (Queue size: {self.fila_pendente_conexoes.qsize()})")
                     threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
-                    # Pausa menor para maior agilidade, mas ainda staggered
-                    time.sleep(0.05)
+                    # Pausa maior para evitar picos de CPU/Rede durante trocas de presets
+                    time.sleep(0.15)
                 else:
-                    time.sleep(0.05)
+                    time.sleep(0.1)
             except Exception as e:
                 print(f"Erro no processador de conexões: {e}")
                 time.sleep(1)
@@ -577,7 +588,7 @@ class CentralMonitoramento(ctk.CTk):
             if handler == "CONECTANDO": continue
             if ip == ip_maximized:
                 handler.set_prioridade(True)
-                handler.set_canal(101) # Switch to Main Stream
+                handler.set_canal(102) # Mantém Sub Stream (Pedido do Usuário)
             else:
                 handler.set_prioridade(False)
                 # Opcional: handler.set_canal(102) # Já deve estar em 102
@@ -962,7 +973,7 @@ class CentralMonitoramento(ctk.CTk):
 
             if ip != "0.0.0.0":
                 if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-                canal_alvo = 101 if self.slot_maximized == idx else 102
+                canal_alvo = 102 # Sempre usa Sub Stream
                 self.iniciar_conexao_assincrona(ip, canal_alvo)
 
     def selecionar_camera(self, ip):
@@ -982,7 +993,7 @@ class CentralMonitoramento(ctk.CTk):
         if not ip: return
         handler = self.camera_handlers.get(ip)
         if handler and handler != "CONECTANDO":
-            if getattr(handler, 'canal', 101) != novo_canal:
+            if getattr(handler, 'canal', 102) != novo_canal:
                 handler.parar()
                 del self.camera_handlers[ip]
                 self.iniciar_conexao_assincrona(ip, novo_canal)
@@ -1055,7 +1066,7 @@ class CentralMonitoramento(ctk.CTk):
             scaling = self._get_window_scaling()
             indices_trabalho = [self.slot_maximized] if self.slot_maximized is not None else range(20)
 
-            # Mapeia quais IPs estão sendo processados para compartilhar a CTkImage se possível
+            # Mapeia quais IPs estão sendo processados para compartilhar frames se possível (IP -> PIL Image)
             current_ips_pil = {}
 
             for i in range(20):
@@ -1091,7 +1102,7 @@ class CentralMonitoramento(ctk.CTk):
                 handler = self.camera_handlers.get(ip)
                 if handler is None:
                     # Decide canal inicial dependendo se está maximizado ou não
-                    canal_alvo = 101 if self.slot_maximized == i else 102
+                    canal_alvo = 102 # Sempre usa Sub Stream
                     self.iniciar_conexao_assincrona(ip, canal_alvo)
                     continue
                 if handler == "CONECTANDO":
@@ -1110,26 +1121,31 @@ class CentralMonitoramento(ctk.CTk):
                     handler.tamanho_alvo = (wf, hf)
                     handler.interpolation = cv2.INTER_LINEAR if self.slot_maximized == i else cv2.INTER_NEAREST
 
-                    if handler.novo_frame:
+                    # Verifica se já processamos este IP neste loop
+                    pil_img = current_ips_pil.get(ip)
+                    if pil_img is None and handler.novo_frame:
                         pil_img = handler.pegar_frame()
                         if pil_img:
-                            wl, hl = wf / scaling, hf / scaling
+                            current_ips_pil[ip] = pil_img
 
-                            try:
-                                # Abordagem de criação direta para garantir atualização (testando se resolve 'dark screen')
-                                # Mas mantendo cache para não explodir pyimages
-                                if self.slot_ctk_images[i] is None:
-                                    self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
-                                    # print(f"DEBUG: Slot {i} ({ip}) - Primeiro Frame ({pil_img.size})")
-                                else:
-                                    # Tenta atualizar o objeto existente
-                                    self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                    if pil_img:
+                        wl, hl = wf / scaling, hf / scaling
 
-                                # SEMPRE garante que o label está apontando para o objeto de cache e sem texto
-                                if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
-                                    self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
-                                    self.slot_labels[i].image = self.slot_ctk_images[i]
-                            except Exception as e:
+                        try:
+                            # Abordagem de criação direta para garantir atualização (testando se resolve 'dark screen')
+                            # Mas mantendo cache para não explodir pyimages
+                            if self.slot_ctk_images[i] is None:
+                                self.slot_ctk_images[i] = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+                                # print(f"DEBUG: Slot {i} ({ip}) - Primeiro Frame ({pil_img.size})")
+                            else:
+                                # Tenta atualizar o objeto existente
+                                self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
+
+                            # SEMPRE garante que o label está apontando para o objeto de cache e sem texto
+                            if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
+                                self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
+                                self.slot_labels[i].image = self.slot_ctk_images[i]
+                        except Exception as e:
                                 # print(f"DEBUG: Erro ao renderizar frame no slot {i}: {e}")
                                 # Se falhar muito, tentamos recriar o cache do slot
                                 self.slot_ctk_images[i] = None
@@ -1149,7 +1165,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.btn_mais_opcoes.lift()
 
         except Exception as e: print(f"Erro no loop de exibição: {e}")
-        finally: self.after(40, self.loop_exibicao)
+        finally: self.after(60, self.loop_exibicao) # Aumentado de 40 para 60 para aliviar thread principal
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
