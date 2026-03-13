@@ -396,7 +396,7 @@ class CentralMonitoramento(ctk.CTk):
 
         # Aplica automaticamente o último preset se existir
         if self.ultimo_preset and self.ultimo_preset in self.presets:
-            self.after(500, lambda: self.aplicar_preset(self.ultimo_preset))
+            self.after(500, lambda: self.aplicar_predefinicao(self.ultimo_preset))
 
         self.loop_exibicao()
 
@@ -926,33 +926,41 @@ class CentralMonitoramento(ctk.CTk):
             print(f"ERRO AO RECRIAR LABEL {idx}: {e}")
             return None
 
-    def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True):
+    def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True, salvar=True, force=False):
         if not (0 <= idx < 20): return
-        
-        # Limpa preset ao atribuir manualmente (se for uma atribuição direta, não via aplicar_preset)
-        # Note: 'aplicar_preset' chama atribuir_ip_ao_slot com gerenciar_conexoes=False
+
+        ip_antigo = self.grid_cameras[idx]
+
+        # Otimização: Se o IP já for o mesmo, não faz nada (evita flicker)
+        # Exceto se for 0.0.0.0 ou se for forçado
+        if ip == ip_antigo and ip != "0.0.0.0" and not force:
+            return
+
+        # Limpa preset ao atribuir manualmente (se for uma atribuição direta, não via aplicar_predefinicao)
         if gerenciar_conexoes and self.ultimo_preset:
             self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
             self.ultimo_preset = None
 
-        ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
-        
+
         # 1. Limpeza visual ultra-robusta
-        # Só mostra IP se for o slot selecionado
         if not ip or ip == "0.0.0.0":
             txt = f"Espaço {idx+1}"
         else:
             txt = f"CONECTANDO...\n{ip}" if idx == self.slot_selecionado else "CONECTANDO..."
 
+        # Tenta limpar imagem e texto de forma independente
         try:
-            # Tenta configurar o label existente
-            self.slot_labels[idx].configure(image=self.img_vazia, text=txt)
+            self.slot_labels[idx].configure(image=self.img_vazia)
             self.slot_labels[idx].image = self.img_vazia
-            # Limpa cache do slot para evitar fantasmas ou falhas de sincronia
             self.slot_ctk_images[idx] = None
         except Exception as e:
-            print(f"Erro visual ao atualizar texto slot {idx}: {e}")
+            print(f"Erro ao limpar imagem slot {idx}: {e}")
+
+        try:
+            self.slot_labels[idx].configure(text=txt)
+        except Exception as e:
+            print(f"Erro ao atualizar texto slot {idx}: {e}")
             lbl = self.recriar_label_slot(idx)
             if lbl:
                 try: lbl.configure(text=txt)
@@ -961,7 +969,8 @@ class CentralMonitoramento(ctk.CTk):
         if atualizar_ui:
             self.update_idletasks()
 
-        self.salvar_grid()
+        if salvar:
+            self.salvar_grid()
 
         # 2. Gerenciamento de conexões (se solicitado)
         if gerenciar_conexoes:
@@ -1251,14 +1260,15 @@ class CentralMonitoramento(ctk.CTk):
 
     def salvar_preset_atual(self):
         def on_name_entered(nome):
+            nome = nome.strip()
             if nome:
                 if nome in self.presets:
-                    self.abrir_modal_confirmacao("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?",
+                    self.abrir_modal_confirmacao("Confirmar", f"A predefinição '{nome}' já existe. Deseja sobrescrevê-la?",
                                                  lambda: self._salvar_preset(nome))
                 else:
                     self._salvar_preset(nome)
 
-        self.abrir_modal_input("Salvar Preset", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_preset(self, nome):
         self.presets[nome] = list(self.grid_cameras)
@@ -1266,7 +1276,7 @@ class CentralMonitoramento(ctk.CTk):
         self.salvar_presets()
         self.atualizar_lista_presets_ui()
 
-    def aplicar_preset(self, nome):
+    def aplicar_predefinicao(self, nome):
         preset = self.presets.get(nome)
         if not preset: return
 
@@ -1279,8 +1289,6 @@ class CentralMonitoramento(ctk.CTk):
         self.ultimo_preset = nome
         self.pintar_preset(nome, self.ACCENT_WINE)
 
-        # print(f"Aplicando predefinição: {nome}")
-
         # 1. Mapeia IPs atuais para saber o que fechar depois
         ips_antigos = set(ip for ip in self.grid_cameras if ip and ip != "0.0.0.0")
 
@@ -1291,7 +1299,8 @@ class CentralMonitoramento(ctk.CTk):
             novos_ips[i] = ip
 
             # Atualiza visualmente cada slot de forma segura
-            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False)
+            # Usa salvar=False para não salvar o grid 20 vezes
+            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False, salvar=False)
 
         # 3. Identifica IPs que não estão mais no grid e fecha-os
         ips_novos_set = set(ip for ip in novos_ips if ip and ip != "0.0.0.0")
@@ -1307,16 +1316,18 @@ class CentralMonitoramento(ctk.CTk):
         for ip in ips_novos_set:
             self.iniciar_conexao_assincrona(ip, 102)
 
-        # 5. Restaura layout se necessário e seleciona slot
+        # 5. Salva o grid final
+        self.salvar_grid()
+
+        # 6. Restaura layout se necessário e seleciona slot
         if self.slot_maximized is not None:
             self.restaurar_grid()
 
         self.selecionar_slot(self.slot_selecionado)
         self.update_idletasks()
-        # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_preset(nome))
 
     def _sobrescrever_preset(self, nome):
@@ -1326,7 +1337,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_presets_ui()
 
     def deletar_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o preset '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_preset(nome))
 
     def _deletar_preset(self, nome):
@@ -1339,17 +1350,19 @@ class CentralMonitoramento(ctk.CTk):
 
     def renomear_preset(self, nome_antigo):
         def on_name_entered(novo_nome):
+            novo_nome = novo_nome.strip()
             if novo_nome and novo_nome != nome_antigo:
                 if novo_nome in self.presets:
-                    self.abrir_modal_alerta("Erro", "Já existe um preset com este nome.")
+                    self.abrir_modal_alerta("Erro", "Já existe uma predefinição com este nome.")
                     return
-                self.presets[novo_nome] = self.presets.pop(nome_antigo)
-                if self.ultimo_preset == nome_antigo:
-                    self.ultimo_preset = novo_nome
-                self.salvar_presets()
-                self.atualizar_lista_presets_ui()
+                if nome_antigo in self.presets:
+                    self.presets[novo_nome] = self.presets.pop(nome_antigo)
+                    if self.ultimo_preset == nome_antigo:
+                        self.ultimo_preset = novo_nome
+                    self.salvar_presets()
+                    self.atualizar_lista_presets_ui()
 
-        self.abrir_modal_input("Renomear Preset", f"Novo nome para '{nome_antigo}':",
+        self.abrir_modal_input("Renomear Predefinição", f"Novo nome para '{nome_antigo}':",
                                on_name_entered, valor_inicial=nome_antigo)
 
     def atualizar_lista_presets_ui(self):
@@ -1363,21 +1376,30 @@ class CentralMonitoramento(ctk.CTk):
             frm.pack(fill="x", pady=2, padx=2)
             frm.pack_propagate(False)
 
-            # Label
+            # Botões de controle (da direita para a esquerda: X, ✎, 💾)
+            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
+                                     hover_color=self.ACCENT_RED, corner_radius=0,
+                                     command=lambda n=nome: self.deletar_preset(n))
+            btn_del.pack(side="right", padx=(2, 5))
+
+            btn_ren = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, corner_radius=0,
+                                     command=lambda n=nome: self.renomear_preset(n))
+            btn_ren.pack(side="right", padx=2)
+
+            btn_sav = ctk.CTkButton(frm, text="💾", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, corner_radius=0,
+                                     command=lambda n=nome: self.sobrescrever_preset(n))
+            btn_sav.pack(side="right", padx=2)
+
+            # Label (expande para preencher o resto)
             lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w", cursor="hand2")
             lbl.pack(side="left", expand=True, fill="both", padx=10)
 
             # Bind no Frame E no Label para facilitar o clique
-            frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
-            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
+            frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_predefinicao(n))
+            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_predefinicao(n))
             frm.configure(cursor="hand2")
-
-            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
-                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
-            btn_del.pack(side="right", padx=5)
-            btn_ren = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
-                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
-            btn_ren.pack(side="right", padx=2)
 
             self.preset_widgets[nome] = frm
 
