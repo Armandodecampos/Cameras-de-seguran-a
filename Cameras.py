@@ -231,6 +231,7 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_grid = os.path.join(user_dir, "grid_config_abi.json")
         self.arquivo_janela = os.path.join(user_dir, "config_janela_abi.json")
         self.arquivo_presets = os.path.join(user_dir, "presets_grid_abi.json")
+        self.arquivo_ips = os.path.join(user_dir, "lista_ips_abi.json")
 
         self.botoes_referencia = {}
         self.ip_selecionado = None
@@ -250,7 +251,7 @@ class CentralMonitoramento(ctk.CTk):
 
         self.carregar_posicao_janela()
         self.presets = self.carregar_presets()
-        self.ips_unicos = self.gerar_lista_ips()
+        self.ips_unicos = self.carregar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.grid_cameras = self.carregar_grid()
 
@@ -286,8 +287,13 @@ class CentralMonitoramento(ctk.CTk):
         self.frame_busca.pack(fill="x", padx=5, pady=5)
 
         self.entry_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="Filtrar...")
-        self.entry_busca.pack(fill="x", expand=True)
+        self.entry_busca.pack(side="left", fill="x", expand=True, padx=(0, 5))
         self.entry_busca.bind("<KeyRelease>", lambda e: self.filtrar_lista())
+
+        self.btn_add_cam = ctk.CTkButton(self.frame_busca, text="+", width=35,
+                                          fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                          command=self.abrir_modal_adicionar_camera)
+        self.btn_add_cam.pack(side="right")
 
         self.scroll_frame = ctk.CTkScrollableFrame(tab_cams, fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=0, pady=5)
@@ -366,7 +372,7 @@ class CentralMonitoramento(ctk.CTk):
             self.slot_frames.append(frm)
             self.slot_labels.append(lbl)
 
-        self.criar_botoes_iniciais()
+        self.atualizar_lista_cameras_ui()
         # Restaura estado inicial
         for i, ip in enumerate(self.grid_cameras):
             if ip and ip != "0.0.0.0":
@@ -1195,7 +1201,86 @@ class CentralMonitoramento(ctk.CTk):
             if handler and handler != "CONECTANDO":
                 handler.nome_display = novo_nome
 
-            self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
+            # Atualiza UI se estiver visível
+            if self.ip_selecionado in self.botoes_referencia:
+                self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
+            self.filtrar_lista()
+
+    def abrir_modal_adicionar_camera(self):
+        modal = ctk.CTkToplevel(self)
+        modal.title("Adicionar Câmera")
+        modal.geometry("400x350")
+        modal.resizable(False, False)
+        modal.attributes("-topmost", True)
+
+        try:
+            self.update_idletasks()
+            x = self.winfo_x() + (self.winfo_width() // 2) - 200
+            y = self.winfo_y() + (self.winfo_height() // 2) - 175
+            modal.geometry(f"+{x}+{y}")
+        except: pass
+
+        ctk.CTkLabel(modal, text="Adicionar Nova Câmera", font=("Roboto", 16, "bold")).pack(pady=20)
+
+        ctk.CTkLabel(modal, text="IP da Câmera:").pack()
+        entry_ip = ctk.CTkEntry(modal, width=300, placeholder_text="Ex: 192.168.7.50")
+        entry_ip.pack(pady=5)
+
+        ctk.CTkLabel(modal, text="Nome da Câmera:").pack()
+        entry_nome = ctk.CTkEntry(modal, width=300, placeholder_text="Ex: Portão Principal")
+        entry_nome.pack(pady=5)
+
+        def confirmar():
+            ip = entry_ip.get().strip()
+            nome = entry_nome.get().strip()
+            if not ip:
+                self.abrir_modal_alerta("Erro", "O IP é obrigatório.")
+                return
+            modal.destroy()
+            self.adicionar_camera_confirmado(ip, nome)
+
+        btn_conf = ctk.CTkButton(modal, text="Confirmar", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                  corner_radius=0, height=40, command=confirmar)
+        btn_conf.pack(fill="x", padx=40, pady=20)
+
+        btn_canc = ctk.CTkButton(modal, text="Cancelar", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                  corner_radius=0, height=40, command=modal.destroy)
+        btn_canc.pack(fill="x", padx=40)
+
+        modal.bind("<Return>", lambda e: confirmar())
+
+    def adicionar_camera_confirmado(self, ip, nome):
+        if ip in self.ips_unicos:
+            self.abrir_modal_alerta("Aviso", "Este IP já existe na lista.")
+            return
+
+        self.ips_unicos.append(ip)
+        # Ordena a lista
+        self.ips_unicos.sort(key=lambda x: [int(d) if d.isdigit() else 0 for d in x.split('.')])
+
+        if nome:
+            self.dados_cameras[ip] = nome
+            with open(self.arquivo_config, "w", encoding='utf-8') as f:
+                json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
+
+        self.salvar_lista_ips()
+        self.atualizar_lista_cameras_ui()
+        self.filtrar_lista()
+
+    def confirmar_exclusao_camera_da_lista(self, ip):
+        self.abrir_modal_confirmacao("Excluir Câmera", f"Deseja remover o IP {ip} da lista de câmeras?",
+                                     lambda: self.excluir_camera_da_lista(ip))
+
+    def excluir_camera_da_lista(self, ip):
+        if ip in self.ips_unicos:
+            self.ips_unicos.remove(ip)
+            if ip in self.dados_cameras:
+                del self.dados_cameras[ip]
+                with open(self.arquivo_config, "w", encoding='utf-8') as f:
+                    json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
+
+            self.salvar_lista_ips()
+            self.atualizar_lista_cameras_ui()
             self.filtrar_lista()
 
     def gerar_lista_ips(self):
@@ -1207,7 +1292,26 @@ class CentralMonitoramento(ctk.CTk):
         base += [f"192.168.7.{i}" for i in range(100, 216)]
         base += ["192.168.7.237", "192.168.7.246", "192.168.7.247", "192.168.7.248", "192.168.7.249",
                  "192.168.7.250", "192.168.7.251", "192.168.7.252"]
-        return sorted(list(set(base)), key=lambda x: [int(d) for d in x.split('.')])
+        ips = sorted(list(set(base)), key=lambda x: [int(d) for d in x.split('.')])
+        return ips
+
+    def carregar_lista_ips(self):
+        if os.path.exists(self.arquivo_ips):
+            try:
+                with open(self.arquivo_ips, "r", encoding='utf-8') as f:
+                    return json.load(f)
+            except: pass
+        ips = self.gerar_lista_ips()
+        self.salvar_lista_ips(ips)
+        return ips
+
+    def salvar_lista_ips(self, ips=None):
+        if ips is None: ips = self.ips_unicos
+        try:
+            with open(self.arquivo_ips, "w", encoding='utf-8') as f:
+                json.dump(ips, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Erro ao salvar lista de IPs: {e}")
 
     def carregar_config(self):
         if os.path.exists(self.arquivo_config):
@@ -1220,19 +1324,36 @@ class CentralMonitoramento(ctk.CTk):
         def chave_ordenacao(ip): return self.dados_cameras.get(ip, f"IP {ip}").lower()
         return sorted(self.ips_unicos, key=chave_ordenacao)
 
-    def criar_botoes_iniciais(self):
+    def atualizar_lista_cameras_ui(self):
+        for child in self.scroll_frame.winfo_children():
+            child.destroy()
+        self.botoes_referencia = {}
+
         for ip in self.obter_ips_ordenados():
             nome = self.dados_cameras.get(ip, f"IP {ip}")
-            frm = ctk.CTkFrame(self.scroll_frame, height=50, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
+            cor = self.ACCENT_WINE if ip == self.ip_selecionado else "transparent"
+            frm = ctk.CTkFrame(self.scroll_frame, height=50, fg_color=cor, border_width=1, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2); frm.pack_propagate(False)
-            lbl_nome = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w")
+
+            # Container para o texto (Label)
+            txt_container = ctk.CTkFrame(frm, fg_color="transparent")
+            txt_container.pack(side="left", fill="both", expand=True)
+
+            lbl_nome = ctk.CTkLabel(txt_container, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w")
             lbl_nome.pack(fill="x", padx=10, pady=(4, 0))
-            lbl_ip = ctk.CTkLabel(frm, text=ip, font=("Roboto", 11), text_color=self.TEXT_S, anchor="w")
+            lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 11), text_color=self.TEXT_S, anchor="w")
             lbl_ip.pack(fill="x", padx=10, pady=(0, 4))
-            for widget in [frm, lbl_nome, lbl_ip]:
-                # O bind com lambda x=ip é seguro aqui
+
+            # Botão de Deletar
+            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color="transparent",
+                                     text_color=self.TEXT_S, hover_color=self.ACCENT_RED,
+                                     command=lambda x=ip: self.confirmar_exclusao_camera_da_lista(x))
+            btn_del.pack(side="right", padx=5)
+
+            for widget in [txt_container, lbl_nome, lbl_ip]:
                 widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
                 widget.configure(cursor="hand2")
+
             self.botoes_referencia[ip] = {'frame': frm, 'lbl_nome': lbl_nome, 'lbl_ip': lbl_ip}
 
     # --- MÉTODOS DE PRESETS ---
