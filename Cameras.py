@@ -230,12 +230,12 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_config = os.path.join(user_dir, "config_cameras_abi.json")
         self.arquivo_grid = os.path.join(user_dir, "grid_config_abi.json")
         self.arquivo_janela = os.path.join(user_dir, "config_janela_abi.json")
-        self.arquivo_presets = os.path.join(user_dir, "presets_grid_abi.json")
+        self.arquivo_predefinicoes = os.path.join(user_dir, "predefinicoes_grid_abi.json")
         self.arquivo_ips = os.path.join(user_dir, "lista_ips_abi.json")
 
         self.botoes_referencia = {}
         self.ip_selecionado = None
-        self.preset_widgets = {}
+        self.predefinicao_widgets = {}
         self.camera_handlers = {}
         self.em_tela_cheia = False
         self.slot_maximized = None
@@ -246,11 +246,11 @@ class CentralMonitoramento(ctk.CTk):
         self.ips_em_fila = set()
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None
-        self.ultimo_preset = None
+        self.ultima_predefinicao = None
         self.aba_ativa = "Câmeras"
 
         self.carregar_posicao_janela()
-        self.presets = self.carregar_presets()
+        self.predefinicoes = self.carregar_predefinicoes()
         self.ips_unicos = self.carregar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.grid_cameras = self.carregar_grid()
@@ -298,16 +298,16 @@ class CentralMonitoramento(ctk.CTk):
         self.scroll_frame = ctk.CTkScrollableFrame(tab_cams, fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=0, pady=5)
 
-        # Conteúdo da Sidebar (Presets)
-        tab_presets = self.tabview.tab("Predefinições")
-        self.btn_salvar_preset = ctk.CTkButton(tab_presets, text="Salvar Predefinição Atual",
-                                                fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
-                                                command=self.salvar_preset_atual)
-        self.btn_salvar_preset.pack(fill="x", padx=10, pady=10)
+        # Conteúdo da Sidebar (Predefinições)
+        tab_predefinicoes = self.tabview.tab("Predefinições")
+        self.btn_salvar_predefinicao = ctk.CTkButton(tab_predefinicoes, text="Salvar Predefinição Atual",
+                                                      fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                                      command=self.salvar_predefinicao_atual)
+        self.btn_salvar_predefinicao.pack(fill="x", padx=10, pady=10)
 
-        ctk.CTkLabel(tab_presets, text="LISTA DE PREDEFINIÇÕES", font=("Roboto", 14, "bold"), text_color=self.TEXT_S).pack(pady=5)
-        self.scroll_presets = ctk.CTkScrollableFrame(tab_presets, fg_color="transparent")
-        self.scroll_presets.pack(expand=True, fill="both", padx=5, pady=5)
+        ctk.CTkLabel(tab_predefinicoes, text="LISTA DE PREDEFINIÇÕES", font=("Roboto", 14, "bold"), text_color=self.TEXT_S).pack(pady=5)
+        self.scroll_predefinicoes = ctk.CTkScrollableFrame(tab_predefinicoes, fg_color="transparent")
+        self.scroll_predefinicoes.pack(expand=True, fill="both", padx=5, pady=5)
 
         # 2. Container Toggle Sidebar (Coluna 1)
         self.container_toggle = ctk.CTkFrame(self, fg_color=self.BG_PANEL, corner_radius=0)
@@ -392,7 +392,7 @@ class CentralMonitoramento(ctk.CTk):
             except: pass
         self.after(200, safe_zoom)
 
-        self.atualizar_lista_presets_ui()
+        self.atualizar_lista_predefinicoes_ui()
 
         # Restaura estado da interface (aba ativa)
         try:
@@ -400,9 +400,9 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Aplica automaticamente o último preset se existir
-        if self.ultimo_preset and self.ultimo_preset in self.presets:
-            self.after(500, lambda: self.aplicar_preset(self.ultimo_preset))
+        # Aplica automaticamente a última predefinição se existir
+        if self.ultima_predefinicao and self.ultima_predefinicao in self.predefinicoes:
+            self.after(500, lambda: self.aplicar_predefinicao(self.ultima_predefinicao))
 
         self.loop_exibicao()
 
@@ -433,7 +433,7 @@ class CentralMonitoramento(ctk.CTk):
                     # print(f"LOG: Iniciando thread de conexão para {ip} (Queue size: {self.fila_pendente_conexoes.qsize()})")
                     threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
-                    # Pausa maior para evitar picos de CPU/Rede durante trocas de presets
+                    # Pausa maior para evitar picos de CPU/Rede durante trocas de predefinições
                     time.sleep(0.15)
                 else:
                     time.sleep(0.1)
@@ -557,7 +557,7 @@ class CentralMonitoramento(ctk.CTk):
                     geom = dados.get("geometry")
                     if geom: self.geometry(geom)
                     self.aba_ativa = dados.get("active_tab", "Câmeras")
-                    self.ultimo_preset = dados.get("last_preset")
+                    self.ultima_predefinicao = dados.get("ultima_predefinicao")
                     self.slot_selecionado = dados.get("slot_selecionado", 0)
             except Exception as e: print(f"Erro ao carregar janela: {e}")
 
@@ -567,7 +567,7 @@ class CentralMonitoramento(ctk.CTk):
                 dados = {
                     "geometry": self.geometry(),
                     "active_tab": self.tabview.get(),
-                    "last_preset": self.ultimo_preset,
+                    "ultima_predefinicao": self.ultima_predefinicao,
                     "slot_selecionado": self.slot_selecionado
                 }
                 with open(self.arquivo_janela, "w") as f: json.dump(dados, f)
@@ -627,10 +627,10 @@ class CentralMonitoramento(ctk.CTk):
 
             # Lógica de Troca (Swap)
             if 0 <= source_idx < 20 and 0 <= target_idx < 20:
-                # Limpa preset ao trocar manualmente
-                if self.ultimo_preset:
-                    self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
-                    self.ultimo_preset = None
+                # Limpa predefinição ao trocar manualmente
+                if self.ultima_predefinicao:
+                    self.pintar_predefinicao(self.ultima_predefinicao, self.BG_SIDEBAR)
+                    self.ultima_predefinicao = None
 
                 ip_src = self.grid_cameras[source_idx]
                 ip_tgt = self.grid_cameras[target_idx]
@@ -732,10 +732,10 @@ class CentralMonitoramento(ctk.CTk):
         idx = self.slot_selecionado
         self.atribuir_ip_ao_slot(idx, "0.0.0.0")
 
-        # Limpa preset ao remover manualmente
-        if self.ultimo_preset:
-            self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
-            self.ultimo_preset = None
+        # Limpa predefinição ao remover manualmente
+        if self.ultima_predefinicao:
+            self.pintar_predefinicao(self.ultima_predefinicao, self.BG_SIDEBAR)
+            self.ultima_predefinicao = None
 
         if self.ip_selecionado:
             self.pintar_botao(self.ip_selecionado, "transparent")
@@ -932,14 +932,17 @@ class CentralMonitoramento(ctk.CTk):
             print(f"ERRO AO RECRIAR LABEL {idx}: {e}")
             return None
 
-    def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True):
+    def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True, salvar=True, forcado=False):
         if not (0 <= idx < 20): return
         
-        # Limpa preset ao atribuir manualmente (se for uma atribuição direta, não via aplicar_preset)
-        # Note: 'aplicar_preset' chama atribuir_ip_ao_slot com gerenciar_conexoes=False
-        if gerenciar_conexoes and self.ultimo_preset:
-            self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
-            self.ultimo_preset = None
+        # Otimização: se o IP já for o mesmo, não faz nada (a menos que seja forçado)
+        if not forcado and self.grid_cameras[idx] == ip and ip != "0.0.0.0":
+            return
+
+        # Limpa predefinição ao atribuir manualmente (se for uma atribuição direta, não via aplicar_predefinicao)
+        if gerenciar_conexoes and self.ultima_predefinicao:
+            self.pintar_predefinicao(self.ultima_predefinicao, self.BG_SIDEBAR)
+            self.ultima_predefinicao = None
 
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
@@ -967,7 +970,8 @@ class CentralMonitoramento(ctk.CTk):
         if atualizar_ui:
             self.update_idletasks()
 
-        self.salvar_grid()
+        if salvar:
+            self.salvar_grid()
 
         # 2. Gerenciamento de conexões (se solicitado)
         if gerenciar_conexoes:
@@ -991,9 +995,9 @@ class CentralMonitoramento(ctk.CTk):
     def pintar_botao(self, ip, cor):
         if ip and ip in self.botoes_referencia: self.botoes_referencia[ip]['frame'].configure(fg_color=cor)
 
-    def pintar_preset(self, nome, cor):
-        if nome and nome in self.preset_widgets:
-            self.preset_widgets[nome].configure(fg_color=cor)
+    def pintar_predefinicao(self, nome, cor):
+        if nome and nome in self.predefinicao_widgets:
+            self.predefinicao_widgets[nome].configure(fg_color=cor)
 
     def trocar_qualidade(self, ip, novo_canal):
         if not ip: return
@@ -1356,51 +1360,55 @@ class CentralMonitoramento(ctk.CTk):
 
             self.botoes_referencia[ip] = {'frame': frm, 'lbl_nome': lbl_nome, 'lbl_ip': lbl_ip}
 
-    # --- MÉTODOS DE PRESETS ---
-    def carregar_presets(self):
-        if os.path.exists(self.arquivo_presets):
+    # --- MÉTODOS DE PREDEFINIÇÕES ---
+    def carregar_predefinicoes(self):
+        if os.path.exists(self.arquivo_predefinicoes):
             try:
-                with open(self.arquivo_presets, "r", encoding='utf-8') as f:
+                with open(self.arquivo_predefinicoes, "r", encoding='utf-8') as f:
                     return json.load(f)
             except: pass
         return {}
 
-    def salvar_presets(self):
+    def salvar_predefinicoes(self):
         try:
-            with open(self.arquivo_presets, "w", encoding='utf-8') as f:
-                json.dump(self.presets, f, ensure_ascii=False, indent=4)
+            with open(self.arquivo_predefinicoes, "w", encoding='utf-8') as f:
+                json.dump(self.predefinicoes, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"Erro ao salvar presets: {e}")
+            print(f"Erro ao salvar predefinicoes: {e}")
 
-    def salvar_preset_atual(self):
+    def salvar_predefinicao_atual(self):
         def on_name_entered(nome):
-            if nome:
-                if nome in self.presets:
-                    self.abrir_modal_confirmacao("Confirmar", f"O preset '{nome}' já existe. Deseja sobrescrevê-lo?",
-                                                 lambda: self._salvar_preset(nome))
-                else:
-                    self._salvar_preset(nome)
+            nome = nome.strip()
+            if not nome:
+                self.abrir_modal_alerta("Aviso", "O nome da predefinição não pode ser vazio.")
+                return
 
-        self.abrir_modal_input("Salvar Preset", "Digite um nome para esta predefinição:", on_name_entered)
+            if nome in self.predefinicoes:
+                self.abrir_modal_confirmacao("Confirmar", f"A predefinição '{nome}' já existe. Deseja sobrescrevê-la?",
+                                             lambda: self._salvar_predefinicao(nome))
+            else:
+                self._salvar_predefinicao(nome)
 
-    def _salvar_preset(self, nome):
-        self.presets[nome] = list(self.grid_cameras)
-        self.ultimo_preset = nome
-        self.salvar_presets()
-        self.atualizar_lista_presets_ui()
+        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
-    def aplicar_preset(self, nome):
-        preset = self.presets.get(nome)
-        if not preset: return
+    def _salvar_predefinicao(self, nome):
+        self.predefinicoes[nome] = list(self.grid_cameras)
+        self.ultima_predefinicao = nome
+        self.salvar_predefinicoes()
+        self.atualizar_lista_predefinicoes_ui()
 
-        # Limpa o cooldown para permitir reconexão imediata se for um preset
+    def aplicar_predefinicao(self, nome):
+        predefinicao = self.predefinicoes.get(nome)
+        if not predefinicao: return
+
+        # Limpa o cooldown para permitir reconexão imediata se for um predefinicao
         self.cooldown_conexoes.clear()
 
-        # Gerencia cores na lista de presets
-        if self.ultimo_preset:
-            self.pintar_preset(self.ultimo_preset, self.BG_SIDEBAR)
-        self.ultimo_preset = nome
-        self.pintar_preset(nome, self.ACCENT_WINE)
+        # Gerencia cores na lista de predefinicoes
+        if self.ultima_predefinicao:
+            self.pintar_predefinicao(self.ultima_predefinicao, self.BG_SIDEBAR)
+        self.ultima_predefinicao = nome
+        self.pintar_predefinicao(nome, self.ACCENT_WINE)
 
         # print(f"Aplicando predefinição: {nome}")
 
@@ -1410,11 +1418,14 @@ class CentralMonitoramento(ctk.CTk):
         # 2. Atualiza os dados do grid primeiro (silenciosamente)
         novos_ips = ["0.0.0.0"] * 20
         for i in range(20):
-            ip = preset[i] if i < len(preset) else "0.0.0.0"
+            ip = predefinicao[i] if i < len(predefinicao) else "0.0.0.0"
             novos_ips[i] = ip
 
-            # Atualiza visualmente cada slot de forma segura
-            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False)
+            # Atualiza visualmente cada slot de forma segura e otimizada
+            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False, salvar=False, forcado=True)
+
+        # Salva o grid uma única vez ao final
+        self.salvar_grid()
 
         # 3. Identifica IPs que não estão mais no grid e fecha-os
         ips_novos_set = set(ip for ip in novos_ips if ip and ip != "0.0.0.0")
@@ -1438,71 +1449,83 @@ class CentralMonitoramento(ctk.CTk):
         self.update_idletasks()
         # print(f"Predefinição '{nome}' aplicada!")
 
-    def sobrescrever_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o preset '{nome}' com a configuração atual?",
-                                     lambda: self._sobrescrever_preset(nome))
+    def sobrescrever_predefinicao(self, nome):
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
+                                     lambda: self._sobrescrever_predefinicao(nome))
 
-    def _sobrescrever_preset(self, nome):
-        self.presets[nome] = list(self.grid_cameras)
-        self.salvar_presets()
-        self.ultimo_preset = nome
-        self.atualizar_lista_presets_ui()
+    def _sobrescrever_predefinicao(self, nome):
+        self.predefinicoes[nome] = list(self.grid_cameras)
+        self.salvar_predefinicoes()
+        self.ultima_predefinicao = nome
+        self.atualizar_lista_predefinicoes_ui()
 
-    def deletar_preset(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o preset '{nome}'?",
-                                     lambda: self._deletar_preset(nome))
+    def excluir_predefinicao(self, nome):
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluí-la (predefinição '{nome}')?",
+                                     lambda: self._excluir_predefinicao(nome))
 
-    def _deletar_preset(self, nome):
-        if nome in self.presets:
-            del self.presets[nome]
-            if self.ultimo_preset == nome:
-                self.ultimo_preset = None
-            self.salvar_presets()
-            self.atualizar_lista_presets_ui()
+    def _excluir_predefinicao(self, nome):
+        if nome in self.predefinicoes:
+            del self.predefinicoes[nome]
+            if self.ultima_predefinicao == nome:
+                self.ultima_predefinicao = None
+            self.salvar_predefinicoes()
+            self.atualizar_lista_predefinicoes_ui()
 
-    def renomear_preset(self, nome_antigo):
+    def renomear_predefinicao(self, nome_antigo):
         def on_name_entered(novo_nome):
-            if novo_nome and novo_nome != nome_antigo:
-                if novo_nome in self.presets:
-                    self.abrir_modal_alerta("Erro", "Já existe um preset com este nome.")
-                    return
-                self.presets[novo_nome] = self.presets.pop(nome_antigo)
-                if self.ultimo_preset == nome_antigo:
-                    self.ultimo_preset = novo_nome
-                self.salvar_presets()
-                self.atualizar_lista_presets_ui()
+            novo_nome = novo_nome.strip()
+            if not novo_nome or novo_nome == nome_antigo:
+                return
 
-        self.abrir_modal_input("Renomear Preset", f"Novo nome para '{nome_antigo}':",
+            if novo_nome in self.predefinicoes:
+                self.abrir_modal_alerta("Erro", "Já existe uma predefinição com este nome.")
+                return
+
+            if nome_antigo in self.predefinicoes:
+                self.predefinicoes[novo_nome] = self.predefinicoes.pop(nome_antigo)
+                if self.ultima_predefinicao == nome_antigo:
+                    self.ultima_predefinicao = novo_nome
+                self.salvar_predefinicoes()
+                self.atualizar_lista_predefinicoes_ui()
+
+        self.abrir_modal_input("Renomear Predefinição", f"Novo nome para '{nome_antigo}':",
                                on_name_entered, valor_inicial=nome_antigo)
 
-    def atualizar_lista_presets_ui(self):
-        for child in self.scroll_presets.winfo_children():
+    def atualizar_lista_predefinicoes_ui(self):
+        for child in self.scroll_predefinicoes.winfo_children():
             child.destroy()
-        self.preset_widgets = {}
+        self.predefinicao_widgets = {}
 
-        for nome in sorted(self.presets.keys()):
-            cor = self.ACCENT_WINE if nome == self.ultimo_preset else self.BG_SIDEBAR
-            frm = ctk.CTkFrame(self.scroll_presets, height=50, fg_color=cor, border_width=1, border_color=self.GRAY_DARK)
+        for nome in sorted(self.predefinicoes.keys()):
+            cor = self.ACCENT_WINE if nome == self.ultima_predefinicao else self.BG_SIDEBAR
+            frm = ctk.CTkFrame(self.scroll_predefinicoes, height=50, fg_color=cor, border_width=1, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2, padx=2)
             frm.pack_propagate(False)
 
-            # Label
+            # Botões de controle à direita (organizados para aparecerem na ordem desejada)
+            # Ordem visual da direita para a esquerda: [X] [✎] [💾]
+            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
+                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.excluir_predefinicao(n))
+            btn_del.pack(side="right", padx=5)
+
+            btn_ren = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_predefinicao(n))
+            btn_ren.pack(side="right", padx=2)
+
+            btn_sav = ctk.CTkButton(frm, text="💾", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.TEXT_S, command=lambda n=nome: self.sobrescrever_predefinicao(n))
+            btn_sav.pack(side="right", padx=2)
+
+            # Nome da predefinição (preenche o resto à esquerda)
             lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w", cursor="hand2")
             lbl.pack(side="left", expand=True, fill="both", padx=10)
 
-            # Bind no Frame E no Label para facilitar o clique
-            frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
-            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
+            # Bind no Frame E no Label para facilitar o clique (aplicar predefinição)
+            frm.bind("<Button-1>", lambda e, n=nome: self.aplicar_predefinicao(n))
+            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_predefinicao(n))
             frm.configure(cursor="hand2")
 
-            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.ACCENT_WINE,
-                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.deletar_preset(n))
-            btn_del.pack(side="right", padx=5)
-            btn_ren = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
-                                     hover_color=self.TEXT_S, command=lambda n=nome: self.renomear_preset(n))
-            btn_ren.pack(side="right", padx=2)
-
-            self.preset_widgets[nome] = frm
+            self.predefinicao_widgets[nome] = frm
 
 if __name__ == "__main__":
     app = CentralMonitoramento()
