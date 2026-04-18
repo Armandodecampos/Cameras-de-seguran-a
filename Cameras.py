@@ -406,7 +406,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Aplica automaticamente o último predefinição se existir
+        # Aplica automaticamente a última predefinição se existir
         if self.ultima_predefinicao and self.ultima_predefinicao in self.predefinicoes:
             self.after(500, lambda: self.aplicar_predefinicao(self.ultima_predefinicao))
 
@@ -1412,6 +1412,12 @@ class CentralMonitoramento(ctk.CTk):
         predefinicao = self.predefinicoes.get(nome)
         if not predefinicao: return
 
+        # Limpa fila de conexões pendentes para priorizar a nova predefinição
+        while not self.fila_pendente_conexoes.empty():
+            try: self.fila_pendente_conexoes.get_nowait()
+            except: pass
+        self.ips_em_fila.clear()
+
         # Limpa o cooldown para permitir reconexão imediata se for um predefinicao
         self.cooldown_conexoes.clear()
 
@@ -1432,8 +1438,8 @@ class CentralMonitoramento(ctk.CTk):
             ip = predefinicao[i] if i < len(predefinicao) else "0.0.0.0"
             novos_ips[i] = ip
 
-            # Atualiza visualmente cada slot de forma segura
-            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False, salvar=False)
+            # Atualiza visualmente cada slot de forma segura (forcado=True garante refresh de texto)
+            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False, salvar=False, forcado=True)
 
         self.salvar_grid()
 
@@ -1460,7 +1466,7 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
@@ -1470,7 +1476,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_predefinicoes_ui()
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
