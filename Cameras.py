@@ -406,7 +406,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Aplica automaticamente o último predefinição se existir
+        # Aplica automaticamente a última predefinição se existir
         if self.ultima_predefinicao and self.ultima_predefinicao in self.predefinicoes:
             self.after(500, lambda: self.aplicar_predefinicao(self.ultima_predefinicao))
 
@@ -1045,6 +1045,15 @@ class CentralMonitoramento(ctk.CTk):
     def _pos_conexao(self, sucesso, camera_obj, ip):
         if sucesso:
             # print(f"LOG: Conexão bem-sucedida com {ip}")
+            # Robustness check: is the IP still needed?
+            if ip not in self.grid_cameras:
+                if camera_obj:
+                    try: camera_obj.parar()
+                    except: pass
+                if self.camera_handlers.get(ip) == "CONECTANDO":
+                    del self.camera_handlers[ip]
+                return
+
             self.camera_handlers[ip] = camera_obj
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
         else:
@@ -1400,7 +1409,7 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 self._salvar_predefinicao(nome)
 
-        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Nova Predefinição", "Digite um nome para a nova predefinição:", on_name_entered)
 
     def _salvar_predefinicao(self, nome):
         self.predefinicoes[nome] = list(self.grid_cameras)
@@ -1412,7 +1421,18 @@ class CentralMonitoramento(ctk.CTk):
         predefinicao = self.predefinicoes.get(nome)
         if not predefinicao: return
 
-        # Limpa o cooldown para permitir reconexão imediata se for um predefinicao
+        # Limpa fila pendente e estados de conexão atuais
+        while not self.fila_pendente_conexoes.empty():
+            try: self.fila_pendente_conexoes.get_nowait()
+            except: break
+        self.ips_em_fila.clear()
+
+        # Remove handlers que estão em estado de "CONECTANDO"
+        ips_conectando = [ip for ip, h in self.camera_handlers.items() if h == "CONECTANDO"]
+        for ip_c in ips_conectando:
+            del self.camera_handlers[ip_c]
+
+        # Limpa o cooldown para permitir reconexão imediata se for uma predefinição
         self.cooldown_conexoes.clear()
 
         # Gerencia cores na lista de predefinicoes
@@ -1460,7 +1480,7 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrevê-la? ('{nome}')",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
@@ -1470,7 +1490,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_predefinicoes_ui()
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluí-la? ('{nome}')",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
@@ -1488,17 +1508,21 @@ class CentralMonitoramento(ctk.CTk):
                 self.abrir_modal_alerta("Erro", "O nome da predefinição não pode ser vazio.")
                 return
 
-            if novo_nome and novo_nome != nome_antigo:
-                if novo_nome in self.predefinicoes:
-                    self.abrir_modal_alerta("Erro", "Já existe uma predefinição com este nome.")
-                    return
+            if novo_nome == nome_antigo:
+                return
 
-                if nome_antigo in self.predefinicoes:
-                    self.predefinicoes[novo_nome] = self.predefinicoes.pop(nome_antigo)
-                    if self.ultima_predefinicao == nome_antigo:
-                        self.ultima_predefinicao = novo_nome
-                    self.salvar_predefinicoes()
-                    self.atualizar_lista_predefinicoes_ui()
+            if novo_nome in self.predefinicoes:
+                self.abrir_modal_alerta("Erro", "Já existe uma predefinição com este nome.")
+                return
+
+            # Efetua a renomeação
+            if nome_antigo in self.predefinicoes:
+                dados = self.predefinicoes.pop(nome_antigo)
+                self.predefinicoes[novo_nome] = dados
+                if self.ultima_predefinicao == nome_antigo:
+                    self.ultima_predefinicao = novo_nome
+                self.salvar_predefinicoes()
+                self.atualizar_lista_predefinicoes_ui()
 
         self.abrir_modal_input("Renomear Predefinição", f"Novo nome para '{nome_antigo}':",
                                on_name_entered, valor_inicial=nome_antigo)
