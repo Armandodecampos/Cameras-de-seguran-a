@@ -138,8 +138,8 @@ class CameraHandler:
                 consecutive_failures = 0
                 now = time.time()
 
-                # Controle de FPS Dinâmico (Reduzido para 5 em background para economizar CPU)
-                target_fps = 25 if self.prioridade else 5
+                # Controle de FPS Dinâmico (Aumentado para 10 em background para melhor fluidez)
+                target_fps = 25 if self.prioridade else 10
                 if now - last_process_time < (1.0 / target_fps):
                     continue
 
@@ -184,7 +184,7 @@ class CameraHandler:
                     time.sleep(0.01)
             else:
                 consecutive_failures += 1
-                if consecutive_failures > 50: # Reduzido de 100 para 50 para reagir mais rápido
+                if consecutive_failures > 300: # Aumentado para 300 para tolerar jitter de rede
                     print(f"LOG: Camera {self.ip_display} sem frames. Tentando reconectar...")
                     if self.cap: self.cap.release()
                     with sem_conexao:
@@ -1169,7 +1169,7 @@ class CentralMonitoramento(ctk.CTk):
                     hf = int(max(10, hf - 6))
 
                     handler.tamanho_alvo = (wf, hf)
-                    handler.interpolation = cv2.INTER_LINEAR if self.slot_maximized == i else cv2.INTER_NEAREST
+                    handler.interpolation = cv2.INTER_LINEAR # Melhor qualidade em todos os modos
 
                     # Verifica se já processamos este IP neste loop
                     pil_img = current_ips_pil.get(ip)
@@ -1215,7 +1215,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.btn_mais_opcoes.lift()
 
         except Exception as e: print(f"Erro no loop de exibição: {e}")
-        finally: self.after(60, self.loop_exibicao) # Aumentado de 40 para 60 para aliviar thread principal
+        finally: self.after(30, self.loop_exibicao) # Reduzido para 30ms para UI mais fluida
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
