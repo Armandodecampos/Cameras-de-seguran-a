@@ -247,7 +247,7 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_maximized = None
         self.slot_selecionado = 0
         self.ip_seletor_atual = [192, 168, 7, 0]
-        self.octet_labels = []
+        self.octet_entries = []
         self.press_data = None
         self.fila_conexoes = queue.Queue()
         self.fila_pendente_conexoes = queue.Queue()
@@ -1343,7 +1343,7 @@ class CentralMonitoramento(ctk.CTk):
         container_octetos = ctk.CTkFrame(frame_seletor, fg_color="transparent")
         container_octetos.pack()
 
-        self.octet_labels = []
+        self.octet_entries = []
         for i in range(4):
             col = ctk.CTkFrame(container_octetos, fg_color="transparent")
             col.pack(side="left")
@@ -1352,9 +1352,12 @@ class CentralMonitoramento(ctk.CTk):
                                    corner_radius=4, command=lambda idx=i: self.alterar_octeto(idx, 1))
             btn_up.pack(pady=2)
 
-            lbl = ctk.CTkLabel(col, text=str(self.ip_seletor_atual[i]), font=("Roboto", 16, "bold"), width=45)
-            lbl.pack(pady=2)
-            self.octet_labels.append(lbl)
+            ent = ctk.CTkEntry(col, width=45, font=("Roboto", 14, "bold"), justify="center")
+            ent.insert(0, str(self.ip_seletor_atual[i]))
+            ent.pack(pady=2)
+            ent.bind("<KeyRelease>", lambda e, idx=i: self.ao_digitar_octeto(e, idx))
+            ent.bind("<Return>", lambda e, idx=i: self.confirmar_digitacao_octeto(idx))
+            self.octet_entries.append(ent)
 
             btn_down = ctk.CTkButton(col, text="▼", width=35, height=25, fg_color=self.GRAY_DARK, hover_color=self.ACCENT_RED,
                                      corner_radius=4, command=lambda idx=i: self.alterar_octeto(idx, -1))
@@ -1372,10 +1375,32 @@ class CentralMonitoramento(ctk.CTk):
             novo_ip = ".".join(map(str, self.ip_seletor_atual))
             self.atribuir_ip_ao_slot(self.slot_selecionado, novo_ip)
 
+    def ao_digitar_octeto(self, event, idx):
+        val_str = self.octet_entries[idx].get()
+        if val_str.isdigit():
+            val = int(val_str)
+            if 0 <= val <= 255:
+                self.ip_seletor_atual[idx] = val
+                if self.slot_selecionado is not None:
+                    novo_ip = ".".join(map(str, self.ip_seletor_atual))
+                    self.atribuir_ip_ao_slot(self.slot_selecionado, novo_ip, salvar=False) # Não salva em cada tecla
+
+    def confirmar_digitacao_octeto(self, idx):
+        val_str = self.octet_entries[idx].get()
+        if val_str.isdigit():
+            val = int(val_str)
+            if 0 <= val <= 255:
+                self.ip_seletor_atual[idx] = val
+                if self.slot_selecionado is not None:
+                    novo_ip = ".".join(map(str, self.ip_seletor_atual))
+                    self.atribuir_ip_ao_slot(self.slot_selecionado, novo_ip, salvar=True)
+        self.atualizar_labels_seletor()
+
     def atualizar_labels_seletor(self):
         for i, val in enumerate(self.ip_seletor_atual):
-            if i < len(self.octet_labels):
-                self.octet_labels[i].configure(text=str(val))
+            if i < len(self.octet_entries):
+                self.octet_entries[i].delete(0, "end")
+                self.octet_entries[i].insert(0, str(val))
 
     def sincronizar_seletor_com_ip(self, ip):
         if not ip or ip == "0.0.0.0":
