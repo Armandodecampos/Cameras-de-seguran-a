@@ -434,7 +434,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Aplica automaticamente o último predefinição se existir
+        # Aplica automaticamente a última predefinição se existir
         if self.ultima_predefinicao and self.ultima_predefinicao in self.predefinicoes:
             self.after(500, lambda: self.aplicar_predefinicao(self.ultima_predefinicao))
 
@@ -1535,7 +1535,13 @@ class CentralMonitoramento(ctk.CTk):
         predefinicao = self.predefinicoes.get(nome)
         if not predefinicao: return
 
-        # Limpa o cooldown para permitir reconexão imediata se for um predefinicao
+        # Limpa fila de conexões pendentes para priorizar a nova predefinição
+        while not self.fila_pendente_conexoes.empty():
+            try: self.fila_pendente_conexoes.get_nowait()
+            except: break
+        self.ips_em_fila.clear()
+
+        # Limpa o cooldown para permitir reconexão imediata se for uma predefinição
         self.cooldown_conexoes.clear()
 
         # Gerencia cores na lista de predefinicoes
@@ -1583,7 +1589,7 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrevê-la com a configuração atual?",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
@@ -1593,7 +1599,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_predefinicoes_ui()
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluí-la?",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
