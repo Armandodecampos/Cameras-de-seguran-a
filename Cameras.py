@@ -268,7 +268,6 @@ class CentralMonitoramento(ctk.CTk):
         self.em_tela_cheia = False
         self.slot_maximized = None
         self.slot_selecionado = 0
-        self.canal_padrao = 102
         self.ip_seletor_atual = [192, 168, 7, 0]
         self.octet_entries = []
         self.press_data = None
@@ -419,11 +418,6 @@ class CentralMonitoramento(ctk.CTk):
 
         # Inicia thread de processamento de conexões staggered
         threading.Thread(target=self._processar_fila_conexoes_pendentes, daemon=True).start()
-
-        self.after(100, self.abrir_modal_escolha_qualidade)
-
-    def iniciar_apos_escolha_qualidade(self, canal):
-        self.canal_padrao = canal
 
         self.alternar_todos_streams()
         
@@ -634,9 +628,10 @@ class CentralMonitoramento(ctk.CTk):
             if handler == "CONECTANDO": continue
             if ip == ip_maximized:
                 handler.set_prioridade(True)
-                handler.set_canal(self.canal_padrao)
+                handler.set_canal(102) # Mantém Sub Stream (Pedido do Usuário)
             else:
                 handler.set_prioridade(False)
+                # Opcional: handler.set_canal(102) # Já deve estar em 102
 
         self.slot_maximized = index
         self.btn_expandir.lift()
@@ -706,7 +701,7 @@ class CentralMonitoramento(ctk.CTk):
             if handler == "CONECTANDO": continue
             handler.set_prioridade(False)
             if ip == ip_foco:
-                handler.set_canal(self.canal_padrao)
+                handler.set_canal(102) # Volta para Sub Stream
 
         self.slot_maximized = None
         self.btn_expandir.lift()
@@ -800,7 +795,7 @@ class CentralMonitoramento(ctk.CTk):
     def alternar_todos_streams(self):
         for ip in set(self.grid_cameras):
             if ip and ip != "0.0.0.0" and ip not in self.camera_handlers:
-                self.iniciar_conexao_assincrona(ip, self.canal_padrao)
+                self.iniciar_conexao_assincrona(ip, 102)
 
     def atualizar_botoes_controle(self):
         if self.slot_maximized is not None:
@@ -917,33 +912,6 @@ class CentralMonitoramento(ctk.CTk):
                                 corner_radius=0, height=40, width=140, command=modal.destroy)
         btn_nao.pack(side="right", expand=True, padx=5)
 
-    def abrir_modal_escolha_qualidade(self):
-        modal = ctk.CTkToplevel(self)
-        modal.title("Escolha de Qualidade")
-        modal.geometry("450x250")
-        modal.resizable(False, False)
-        modal.attributes("-topmost", True)
-
-        # Impede fechar pelo X sem escolher
-        modal.protocol("WM_DELETE_WINDOW", lambda: None)
-
-        try:
-            self.update_idletasks()
-            x = self.winfo_x() + (self.winfo_width() // 2) - 225
-            y = self.winfo_y() + (self.winfo_height() // 2) - 125
-            modal.geometry(f"+{x}+{y}")
-        except: pass
-
-        ctk.CTkLabel(modal, text="Escolha a qualidade inicial das câmeras:", font=("Roboto", 16, "bold"), text_color=self.TEXT_P).pack(pady=20)
-
-        btn_baixa = ctk.CTkButton(modal, text="Baixa Qualidade (Sub Stream - Rápido)", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
-                                   corner_radius=0, height=45, command=lambda: [modal.destroy(), self.iniciar_apos_escolha_qualidade(102)])
-        btn_baixa.pack(fill="x", padx=40, pady=5)
-
-        btn_alta = ctk.CTkButton(modal, text="Alta Qualidade (Main Stream - Lento)", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
-                                  corner_radius=0, height=45, command=lambda: [modal.destroy(), self.iniciar_apos_escolha_qualidade(101)])
-        btn_alta.pack(fill="x", padx=40, pady=5)
-
     def abrir_modal_alerta(self, titulo, mensagem):
         modal = ctk.CTkToplevel(self)
         modal.title(titulo)
@@ -1043,7 +1011,7 @@ class CentralMonitoramento(ctk.CTk):
 
             if ip != "0.0.0.0":
                 if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-                canal_alvo = self.canal_padrao
+                canal_alvo = 102 # Sempre usa Sub Stream
                 self.iniciar_conexao_assincrona(ip, canal_alvo)
 
     def selecionar_camera(self, ip):
@@ -1184,7 +1152,7 @@ class CentralMonitoramento(ctk.CTk):
                 handler = self.camera_handlers.get(ip)
                 if handler is None:
                     # Decide canal inicial dependendo se está maximizado ou não
-                    canal_alvo = self.canal_padrao
+                    canal_alvo = 102 # Sempre usa Sub Stream
                     self.iniciar_conexao_assincrona(ip, canal_alvo)
                     continue
                 if handler == "CONECTANDO":
@@ -1604,7 +1572,7 @@ class CentralMonitoramento(ctk.CTk):
 
         # 4. Inicia conexões para os novos IPs (o staggered cuidará do resto)
         for ip in ips_novos_set:
-            self.iniciar_conexao_assincrona(ip, self.canal_padrao)
+            self.iniciar_conexao_assincrona(ip, 102)
 
         # 5. Restaura layout se necessário e seleciona slot
         if self.slot_maximized is not None:
