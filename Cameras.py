@@ -246,6 +246,8 @@ class CentralMonitoramento(ctk.CTk):
         self.em_tela_cheia = False
         self.slot_maximized = None
         self.slot_selecionado = 0
+        self.ip_seletor_atual = [192, 168, 7, 0]
+        self.octet_labels = []
         self.press_data = None
         self.fila_conexoes = queue.Queue()
         self.fila_pendente_conexoes = queue.Queue()
@@ -289,6 +291,10 @@ class CentralMonitoramento(ctk.CTk):
 
         # Conteúdo da Sidebar (Câmeras)
         tab_cams = self.tabview.tab("Câmeras")
+
+        # Seletor de IP Manual
+        self.criar_seletor_ip(tab_cams)
+
         self.frame_busca = ctk.CTkFrame(tab_cams, fg_color="transparent")
         self.frame_busca.pack(fill="x", padx=5, pady=5)
 
@@ -716,6 +722,9 @@ class CentralMonitoramento(ctk.CTk):
 
             self.btn_expandir.lift()
             self.btn_mais_opcoes.lift()
+
+            # Sincroniza o seletor de IP
+            self.sincronizar_seletor_com_ip(ip_novo)
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
@@ -1324,6 +1333,61 @@ class CentralMonitoramento(ctk.CTk):
     def obter_ips_ordenados(self):
         def chave_ordenacao(ip): return self.dados_cameras.get(ip, f"IP {ip}").lower()
         return sorted(self.ips_unicos, key=chave_ordenacao)
+
+    def criar_seletor_ip(self, parent):
+        frame_seletor = ctk.CTkFrame(parent, fg_color="transparent")
+        frame_seletor.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(frame_seletor, text="SELETOR DE IP", font=("Roboto", 12, "bold"), text_color=self.TEXT_S).pack(pady=(0, 5))
+
+        container_octetos = ctk.CTkFrame(frame_seletor, fg_color="transparent")
+        container_octetos.pack()
+
+        self.octet_labels = []
+        for i in range(4):
+            col = ctk.CTkFrame(container_octetos, fg_color="transparent")
+            col.pack(side="left")
+
+            btn_up = ctk.CTkButton(col, text="▲", width=35, height=25, fg_color=self.GRAY_DARK, hover_color=self.ACCENT_RED,
+                                   corner_radius=4, command=lambda idx=i: self.alterar_octeto(idx, 1))
+            btn_up.pack(pady=2)
+
+            lbl = ctk.CTkLabel(col, text=str(self.ip_seletor_atual[i]), font=("Roboto", 16, "bold"), width=45)
+            lbl.pack(pady=2)
+            self.octet_labels.append(lbl)
+
+            btn_down = ctk.CTkButton(col, text="▼", width=35, height=25, fg_color=self.GRAY_DARK, hover_color=self.ACCENT_RED,
+                                     corner_radius=4, command=lambda idx=i: self.alterar_octeto(idx, -1))
+            btn_down.pack(pady=2)
+
+            if i < 3:
+                ctk.CTkLabel(container_octetos, text=".", font=("Roboto", 20, "bold")).pack(side="left", padx=2, pady=(25, 0))
+
+    def alterar_octeto(self, idx, delta):
+        self.ip_seletor_atual[idx] = (self.ip_seletor_atual[idx] + delta) % 256
+        self.atualizar_labels_seletor()
+
+        # Se houver um slot selecionado, atualiza o IP dele
+        if self.slot_selecionado is not None:
+            novo_ip = ".".join(map(str, self.ip_seletor_atual))
+            self.atribuir_ip_ao_slot(self.slot_selecionado, novo_ip)
+
+    def atualizar_labels_seletor(self):
+        for i, val in enumerate(self.ip_seletor_atual):
+            if i < len(self.octet_labels):
+                self.octet_labels[i].configure(text=str(val))
+
+    def sincronizar_seletor_com_ip(self, ip):
+        if not ip or ip == "0.0.0.0":
+            return
+
+        try:
+            partes = ip.split('.')
+            if len(partes) == 4:
+                self.ip_seletor_atual = [int(p) for p in partes]
+                self.atualizar_labels_seletor()
+        except:
+            pass
 
     def atualizar_lista_cameras_ui(self):
         for child in self.scroll_frame.winfo_children():
