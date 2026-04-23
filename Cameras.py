@@ -37,6 +37,15 @@ class CameraHandler:
         self.exibir_info = False
         self.prioridade = False
         self.necessita_reconexao = False
+        self.ultimo_erro = None
+
+    def verificar_alcance(self, timeout=1.0):
+        """Verifica se o IP e a porta RTSP (554) estão acessíveis."""
+        try:
+            with socket.create_connection((self.ip, 554), timeout=timeout):
+                return True
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            return False
 
     def _gerar_url(self, ip, canal):
         # RTSP String Padrão Hikvision/Intelbras
@@ -61,30 +70,43 @@ class CameraHandler:
 
     def iniciar(self):
         try:
+            # 1. Verifica se o dispositivo está na rede
+            if not self.verificar_alcance(timeout=1.5):
+                self.ultimo_erro = "OFFLINE"
+                print(f"Dispositivo offline: {self.ip_display}")
+                return False
+
             print(f"Tentando conectar em: {self.ip_display} (Canal {self.canal})...")
 
-            # Usa o semáforo para não abrir muitas conexões ao mesmo tempo
-            with sem_conexao:
-                self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+            # 2. Loop de retentativa para abrir o stream
+            for tentativa in range(3):
+                with sem_conexao:
+                    self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
 
-            if hasattr(cv2, 'CAP_PROP_OPEN_TIMEOUT_USEC'):
-                try: self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_USEC, 5000000)
-                except: pass
+                if hasattr(cv2, 'CAP_PROP_OPEN_TIMEOUT_USEC'):
+                    try: self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_USEC, 5000000)
+                    except: pass
 
-            if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
-                try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
-                except: pass
+                if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
+                    try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
+                    except: pass
 
-            if self.cap.isOpened():
-                self.rodando = True
-                self.conectado = True
-                threading.Thread(target=self.loop_leitura, daemon=True).start()
-                print(f"Conectado com sucesso: {self.ip_display}")
-                return True
-            else:
-                print(f"Falha ao abrir stream: {self.ip_display}")
-                return False
+                if self.cap.isOpened():
+                    self.rodando = True
+                    self.conectado = True
+                    self.ultimo_erro = None
+                    threading.Thread(target=self.loop_leitura, daemon=True).start()
+                    print(f"Conectado com sucesso: {self.ip_display} (Tentativa {tentativa+1})")
+                    return True
+
+                print(f"Tentativa {tentativa+1} falhou para {self.ip_display}. Aguardando...")
+                time.sleep(0.5)
+
+            self.ultimo_erro = "ERRO RTSP"
+            print(f"Falha ao abrir stream após retentativas: {self.ip_display}")
+            return False
         except Exception as e:
+            self.ultimo_erro = "ERRO DRIVER"
             print(f"Erro driver ({self.ip_display}): {e}")
             return False
 
@@ -1046,12 +1068,14 @@ class CentralMonitoramento(ctk.CTk):
             nova_cam = CameraHandler(ip, canal, user=self.user_ptz, password=self.pass_ptz)
             nova_cam.nome_display = self.dados_cameras.get(ip, "")
             sucesso = nova_cam.iniciar()
-            self.fila_conexoes.put((sucesso, nova_cam, ip))
+            # Passa o erro detalhado se houver
+            erro = getattr(nova_cam, 'ultimo_erro', None)
+            self.fila_conexoes.put((sucesso, nova_cam, ip, erro))
         except Exception as e:
             print(f"Erro crítico na thread de conexão ({ip}): {e}")
-            self.fila_conexoes.put((False, None, ip))
+            self.fila_conexoes.put((False, None, ip, "ERRO CRITICO"))
 
-    def _pos_conexao(self, sucesso, camera_obj, ip):
+    def _pos_conexao(self, sucesso, camera_obj, ip, erro=None):
         if sucesso:
             # print(f"LOG: Conexão bem-sucedida com {ip}")
             self.camera_handlers[ip] = camera_obj
@@ -1059,11 +1083,12 @@ class CentralMonitoramento(ctk.CTk):
         else:
             # print(f"LOG: Falha na conexão final com {ip}")
             if ip in self.camera_handlers: del self.camera_handlers[ip]
-            self.cooldown_conexoes[ip] = time.time()
+            self.cooldown_conexoes[ip] = (time.time(), erro)
             for i, grid_ip in enumerate(self.grid_cameras):
                 if grid_ip == ip:
                     try:
-                        self.slot_labels[i].configure(image=None, text=f"FALHA CONEXÃO\n{ip}")
+                        msg = f"{erro}\n{ip}" if erro else f"FALHA CONEXÃO\n{ip}"
+                        self.slot_labels[i].configure(image=None, text=msg)
                         self.slot_labels[i].image = None
                         self.slot_ctk_images[i] = None
                     except: pass
@@ -1074,8 +1099,13 @@ class CentralMonitoramento(ctk.CTk):
             # Processa novas conexões
             while not self.fila_conexoes.empty():
                 try:
-                    sucesso, camera_obj, ip = self.fila_conexoes.get_nowait()
-                    self._pos_conexao(sucesso, camera_obj, ip)
+                    res = self.fila_conexoes.get_nowait()
+                    if len(res) == 4:
+                        sucesso, camera_obj, ip, erro = res
+                        self._pos_conexao(sucesso, camera_obj, ip, erro)
+                    else:
+                        sucesso, camera_obj, ip = res
+                        self._pos_conexao(sucesso, camera_obj, ip)
                 except: pass
 
             agora = time.time()
@@ -1105,9 +1135,13 @@ class CentralMonitoramento(ctk.CTk):
 
                 # Verifica erro de conexão
                 if ip in self.cooldown_conexoes:
-                    if agora - self.cooldown_conexoes[ip] < 10:
+                    cooldown_data = self.cooldown_conexoes[ip]
+                    ts = cooldown_data[0] if isinstance(cooldown_data, tuple) else cooldown_data
+                    erro = cooldown_data[1] if isinstance(cooldown_data, tuple) else "FALHA CONEXÃO"
+
+                    if agora - ts < 10:
                         try:
-                            target_status = f"FALHA CONEXÃO\n{ip}" if i == self.slot_selecionado else "FALHA CONEXÃO"
+                            target_status = f"{erro}\n{ip}" if i == self.slot_selecionado else erro
                             if self.slot_labels[i].image != self.img_vazia or self.slot_labels[i].cget("text") != target_status:
                                 self.slot_labels[i].configure(image=self.img_vazia, text=target_status)
                                 self.slot_labels[i].image = self.img_vazia
