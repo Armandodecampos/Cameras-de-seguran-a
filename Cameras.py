@@ -138,8 +138,8 @@ class CameraHandler:
                 consecutive_failures = 0
                 now = time.time()
 
-                # Controle de FPS Dinâmico (Aumentado para 10 em background para melhor fluidez)
-                target_fps = 25 if self.prioridade else 10
+                # Controle de FPS Dinâmico (Reduzido para 5 em background para economizar CPU/Rede)
+                target_fps = 25 if self.prioridade else 5
                 if now - last_process_time < (1.0 / target_fps):
                     continue
 
@@ -628,10 +628,10 @@ class CentralMonitoramento(ctk.CTk):
             if handler == "CONECTANDO": continue
             if ip == ip_maximized:
                 handler.set_prioridade(True)
-                handler.set_canal(102) # Mantém Sub Stream (Pedido do Usuário)
+                handler.set_canal(101) # Muda para Main Stream ao maximizar
             else:
                 handler.set_prioridade(False)
-                # Opcional: handler.set_canal(102) # Já deve estar em 102
+                handler.set_canal(102) # Mantém outros em Sub Stream
 
         self.slot_maximized = index
         self.btn_expandir.lift()
@@ -700,8 +700,7 @@ class CentralMonitoramento(ctk.CTk):
         for ip, handler in self.camera_handlers.items():
             if handler == "CONECTANDO": continue
             handler.set_prioridade(False)
-            if ip == ip_foco:
-                handler.set_canal(102) # Volta para Sub Stream
+            handler.set_canal(102) # Volta tudo para Sub Stream
 
         self.slot_maximized = None
         self.btn_expandir.lift()
@@ -1169,7 +1168,8 @@ class CentralMonitoramento(ctk.CTk):
                     hf = int(max(10, hf - 6))
 
                     handler.tamanho_alvo = (wf, hf)
-                    handler.interpolation = cv2.INTER_LINEAR # Melhor qualidade em todos os modos
+                    # Usa LINEAR para maximizada e NEAREST para miniaturas (melhor performance)
+                    handler.interpolation = cv2.INTER_LINEAR if self.slot_maximized == i else cv2.INTER_NEAREST
 
                     # Verifica se já processamos este IP neste loop
                     pil_img = current_ips_pil.get(ip)
@@ -1215,7 +1215,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.btn_mais_opcoes.lift()
 
         except Exception as e: print(f"Erro no loop de exibição: {e}")
-        finally: self.after(30, self.loop_exibicao) # Reduzido para 30ms para UI mais fluida
+        finally: self.after(50, self.loop_exibicao) # Ajustado para 50ms para equilibrar fluidez e CPU
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
