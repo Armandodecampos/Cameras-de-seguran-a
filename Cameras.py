@@ -434,7 +434,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Aplica automaticamente o último predefinição se existir
+        # Aplica automaticamente a última predefinição se existir
         if self.ultima_predefinicao and self.ultima_predefinicao in self.predefinicoes:
             self.after(500, lambda: self.aplicar_predefinicao(self.ultima_predefinicao))
 
@@ -1077,8 +1077,17 @@ class CentralMonitoramento(ctk.CTk):
     def _pos_conexao(self, sucesso, camera_obj, ip, erro=None):
         if sucesso:
             # print(f"LOG: Conexão bem-sucedida com {ip}")
-            self.camera_handlers[ip] = camera_obj
-            if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+            # Robustez: Verifica se o IP ainda é necessário antes de assumir o handler
+            if ip in self.grid_cameras:
+                self.camera_handlers[ip] = camera_obj
+                if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+            else:
+                # Se não for mais necessário, para o handler imediatamente
+                print(f"LOG: Conexão com {ip} descartada (IP não está mais no grid)")
+                try: camera_obj.parar()
+                except Exception as e:
+                    print(f"Erro ao parar handler descartado: {e}")
+                if ip in self.camera_handlers: del self.camera_handlers[ip]
         else:
             # print(f"LOG: Falha na conexão final com {ip}")
             if ip in self.camera_handlers: del self.camera_handlers[ip]
@@ -1231,24 +1240,34 @@ class CentralMonitoramento(ctk.CTk):
 
     def alternar_edicao_nome(self):
         if not self.ip_selecionado: return
-        self.abrir_modal_input("Renomear Câmera", "Digite o novo nome para a câmera:",
-                               self.salvar_nome, valor_inicial=self.dados_cameras.get(self.ip_selecionado, ""))
+        self.alternar_edicao_nome_por_ip(self.ip_selecionado)
+
+    def alternar_edicao_nome_por_ip(self, ip):
+        self.abrir_modal_input("Renomear Câmera", f"Digite o novo nome para a câmera ({ip}):",
+                               lambda novo: self.salvar_nome_por_ip(ip, novo),
+                               valor_inicial=self.dados_cameras.get(ip, ""))
 
     def salvar_nome(self, novo_nome):
         if self.ip_selecionado:
-            self.dados_cameras[self.ip_selecionado] = novo_nome
+            self.salvar_nome_por_ip(self.ip_selecionado, novo_nome)
+
+    def salvar_nome_por_ip(self, ip, novo_nome):
+        self.dados_cameras[ip] = novo_nome
+        try:
             with open(self.arquivo_config, "w", encoding='utf-8') as f:
                 json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Erro ao salvar nome da câmera: {e}")
 
-            # Atualiza handler se existir
-            handler = self.camera_handlers.get(self.ip_selecionado)
-            if handler and handler != "CONECTANDO":
-                handler.nome_display = novo_nome
+        # Atualiza handler se existir
+        handler = self.camera_handlers.get(ip)
+        if handler and handler != "CONECTANDO":
+            handler.nome_display = novo_nome
 
-            # Atualiza UI se estiver visível
-            if self.ip_selecionado in self.botoes_referencia:
-                self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
-            self.filtrar_lista()
+        # Atualiza UI se estiver visível
+        if ip in self.botoes_referencia:
+            self.botoes_referencia[ip]['lbl_nome'].configure(text=novo_nome)
+        self.filtrar_lista()
 
     def abrir_modal_adicionar_camera(self):
         modal = ctk.CTkToplevel(self)
@@ -1468,11 +1487,16 @@ class CentralMonitoramento(ctk.CTk):
             lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 11), text_color=self.TEXT_S, anchor="w")
             lbl_ip.pack(fill="x", padx=10, pady=(0, 4))
 
-            # Botão de Deletar
+            # Botões de Controle
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color="transparent",
                                      text_color=self.TEXT_S, hover_color=self.ACCENT_RED,
                                      command=lambda x=ip: self.confirmar_exclusao_camera_da_lista(x))
             btn_del.pack(side="right", padx=5)
+
+            btn_ren = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color="transparent",
+                                     text_color=self.TEXT_S, hover_color=self.GRAY_DARK,
+                                     command=lambda x=ip: self.alternar_edicao_nome_por_ip(x))
+            btn_ren.pack(side="right", padx=2)
 
             for widget in [txt_container, lbl_nome, lbl_ip]:
                 widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
@@ -1523,7 +1547,7 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 self._salvar_predefinicao(nome)
 
-        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Nova Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_predefinicao(self, nome):
         self.predefinicoes[nome] = list(self.grid_cameras)
@@ -1535,10 +1559,21 @@ class CentralMonitoramento(ctk.CTk):
         predefinicao = self.predefinicoes.get(nome)
         if not predefinicao: return
 
-        # Limpa o cooldown para permitir reconexão imediata se for um predefinicao
+        # Limpa fila de conexões pendentes para priorizar a nova predefinição
+        while not self.fila_pendente_conexoes.empty():
+            try: self.fila_pendente_conexoes.get_nowait()
+            except: pass
+        self.ips_em_fila.clear()
+
+        # Remove handlers que estão apenas em estado 'CONECTANDO'
+        for ip_h, h in list(self.camera_handlers.items()):
+            if h == "CONECTANDO":
+                del self.camera_handlers[ip_h]
+
+        # Limpa o cooldown para permitir reconexão imediata se for uma predefinição
         self.cooldown_conexoes.clear()
 
-        # Gerencia cores na lista de predefinicoes
+        # Gerencia cores na lista de predefinições
         if self.ultima_predefinicao:
             self.pintar_predefinicao(self.ultima_predefinicao, self.BG_SIDEBAR)
         self.ultima_predefinicao = nome
@@ -1583,7 +1618,7 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
@@ -1593,7 +1628,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_predefinicoes_ui()
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
