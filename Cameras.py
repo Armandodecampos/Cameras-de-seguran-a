@@ -1077,8 +1077,16 @@ class CentralMonitoramento(ctk.CTk):
     def _pos_conexao(self, sucesso, camera_obj, ip, erro=None):
         if sucesso:
             # print(f"LOG: Conexão bem-sucedida com {ip}")
-            self.camera_handlers[ip] = camera_obj
-            if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+            # Verifica se o IP ainda é necessário no grid antes de atribuir
+            if ip in self.grid_cameras:
+                self.camera_handlers[ip] = camera_obj
+                if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+            else:
+                # Se não for mais necessário, para o handler imediatamente
+                print(f"LOG: IP {ip} não está mais no grid. Descartando conexão.")
+                if camera_obj:
+                    try: camera_obj.parar()
+                    except: pass
         else:
             # print(f"LOG: Falha na conexão final com {ip}")
             if ip in self.camera_handlers: del self.camera_handlers[ip]
@@ -1523,7 +1531,7 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 self._salvar_predefinicao(nome)
 
-        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Nova Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_predefinicao(self, nome):
         self.predefinicoes[nome] = list(self.grid_cameras)
@@ -1534,6 +1542,17 @@ class CentralMonitoramento(ctk.CTk):
     def aplicar_predefinicao(self, nome):
         predefinicao = self.predefinicoes.get(nome)
         if not predefinicao: return
+
+        # Limpa a fila de conexões pendentes para não acumular com as novas
+        while not self.fila_pendente_conexoes.empty():
+            try: self.fila_pendente_conexoes.get_nowait()
+            except: break
+        self.ips_em_fila.clear()
+
+        # Remove handlers que ainda estão tentando conectar
+        ips_conectando = [ip for ip, h in self.camera_handlers.items() if h == "CONECTANDO"]
+        for ip_c in ips_conectando:
+            del self.camera_handlers[ip_c]
 
         # Limpa o cooldown para permitir reconexão imediata se for um predefinicao
         self.cooldown_conexoes.clear()
@@ -1583,7 +1602,7 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
@@ -1593,7 +1612,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_predefinicoes_ui()
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
