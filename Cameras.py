@@ -434,7 +434,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Aplica automaticamente o último predefinição se existir
+        # Aplica automaticamente a última predefinição se existir
         if self.ultima_predefinicao and self.ultima_predefinicao in self.predefinicoes:
             self.after(500, lambda: self.aplicar_predefinicao(self.ultima_predefinicao))
 
@@ -1077,6 +1077,15 @@ class CentralMonitoramento(ctk.CTk):
     def _pos_conexao(self, sucesso, camera_obj, ip, erro=None):
         if sucesso:
             # print(f"LOG: Conexão bem-sucedida com {ip}")
+            # Robustez: Verifica se o IP ainda está no grid antes de atribuir
+            if ip not in self.grid_cameras:
+                if camera_obj:
+                    try: camera_obj.parar()
+                    except: pass
+                if ip in self.camera_handlers:
+                    del self.camera_handlers[ip]
+                return
+
             self.camera_handlers[ip] = camera_obj
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
         else:
@@ -1485,8 +1494,11 @@ class CentralMonitoramento(ctk.CTk):
         if os.path.exists(self.arquivo_predefinicoes):
             try:
                 with open(self.arquivo_predefinicoes, "r", encoding='utf-8') as f:
-                    return json.load(f)
-            except: pass
+                    dados = json.load(f)
+                    if isinstance(dados, dict):
+                        return dados
+            except (json.JSONDecodeError, Exception) as e:
+                print(f"Erro ao carregar predefinições: {e}")
 
         # Migração de legado
         user_dir = os.path.expanduser("~")
@@ -1508,7 +1520,7 @@ class CentralMonitoramento(ctk.CTk):
             with open(self.arquivo_predefinicoes, "w", encoding='utf-8') as f:
                 json.dump(self.predefinicoes, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"Erro ao salvar predefinicoes: {e}")
+            print(f"Erro ao salvar predefinições: {e}")
 
     def salvar_predefinicao_atual(self):
         def on_name_entered(nome):
@@ -1523,7 +1535,7 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 self._salvar_predefinicao(nome)
 
-        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Nova Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_predefinicao(self, nome):
         self.predefinicoes[nome] = list(self.grid_cameras)
@@ -1535,7 +1547,18 @@ class CentralMonitoramento(ctk.CTk):
         predefinicao = self.predefinicoes.get(nome)
         if not predefinicao: return
 
-        # Limpa o cooldown para permitir reconexão imediata se for um predefinicao
+        # Limpa a fila de conexões pendentes para priorizar a nova predefinição
+        while not self.fila_pendente_conexoes.empty():
+            try: self.fila_pendente_conexoes.get_nowait()
+            except: break
+        self.ips_em_fila.clear()
+
+        # Remove handlers que estão em estado "CONECTANDO"
+        for ip in list(self.camera_handlers.keys()):
+            if self.camera_handlers[ip] == "CONECTANDO":
+                del self.camera_handlers[ip]
+
+        # Limpa o cooldown para permitir reconexão imediata se for uma predefinição
         self.cooldown_conexoes.clear()
 
         # Gerencia cores na lista de predefinicoes
@@ -1583,7 +1606,7 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrevê-la ('{nome}') com a configuração atual?",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
@@ -1593,7 +1616,7 @@ class CentralMonitoramento(ctk.CTk):
         self.atualizar_lista_predefinicoes_ui()
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluí-la ('{nome}')?",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
