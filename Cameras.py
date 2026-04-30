@@ -138,14 +138,16 @@ class CameraHandler:
                 consecutive_failures = 0
                 now = time.time()
 
-                # Controle de FPS Dinâmico (Reduzido para 5 em background para economizar CPU/Rede)
-                target_fps = 25 if self.prioridade else 5
+                # Controle de FPS Dinâmico (Reduzido para 7 em background para economizar CPU/Rede mas manter fluidez)
+                target_fps = 25 if self.prioridade else 7
                 if now - last_process_time < (1.0 / target_fps):
                     continue
 
                 # Se a UI ainda não consumiu o frame anterior, e não é prioridade, podemos pular
+                # Mas forçamos a atualização se passou muito tempo (0.2s) para evitar congelamentos
                 if self.novo_frame and not self.prioridade:
-                    continue
+                    if now - last_process_time < 0.2:
+                        continue
 
                 # Retrieve frame (decodifica)
                 ret_ret, frame = self.cap.retrieve()
@@ -278,6 +280,7 @@ class CentralMonitoramento(ctk.CTk):
         self.tecla_pressionada = None
         self.ultima_predefinicao = None
         self.aba_ativa = "Câmeras"
+        self.forcar_baixa_qualidade = False
 
         self.carregar_posicao_janela()
         self.predefinicoes = self.carregar_predefinicoes()
@@ -290,6 +293,7 @@ class CentralMonitoramento(ctk.CTk):
         # Cache de estado da UI para evitar chamadas redundantes ao Tcl/Tk
         self.cache_ui_text = [None] * 20
         self.cache_ui_image = [None] * 20
+        self.cache_ui_size = [None] * 20
         # Imagem 1x1 transparente para resets seguros
         self.img_vazia = ctk.CTkImage(Image.new('RGBA', (1, 1), (0,0,0,0)), size=(1, 1))
 
@@ -319,6 +323,12 @@ class CentralMonitoramento(ctk.CTk):
 
         # Seletor de IP Manual
         self.criar_seletor_ip(tab_cams)
+
+        # Toggle de Baixa Qualidade
+        self.switch_baixa_qualidade = ctk.CTkSwitch(tab_cams, text="Forçar Baixa Qualidade",
+                                                   progress_color=self.ACCENT_RED,
+                                                   command=self.alternar_baixa_qualidade)
+        self.switch_baixa_qualidade.pack(pady=10)
 
         self.frame_busca = ctk.CTkFrame(tab_cams, fg_color="transparent")
         self.frame_busca.pack(fill="x", padx=5, pady=5)
@@ -612,6 +622,19 @@ class CentralMonitoramento(ctk.CTk):
         self.destroy()
         os._exit(0)
 
+    def obter_canal_alvo(self, ip):
+        """Define se deve usar canal 101 (Main) ou 102 (Sub) baseado no estado do sistema."""
+        if self.forcar_baixa_qualidade:
+            return 102
+
+        # Se estiver maximizada, o IP maximizado usa 101
+        if self.slot_maximized is not None:
+            ip_max = self.grid_cameras[self.slot_maximized]
+            if ip == ip_max:
+                return 101
+
+        return 102
+
     def maximizar_slot(self, index):
         self.grid_frame.pack_configure(padx=0, pady=0)
 
@@ -631,10 +654,10 @@ class CentralMonitoramento(ctk.CTk):
             if handler == "CONECTANDO": continue
             if ip == ip_maximized:
                 handler.set_prioridade(True)
-                handler.set_canal(101) # Muda para Main Stream ao maximizar
+                handler.set_canal(self.obter_canal_alvo(ip))
             else:
                 handler.set_prioridade(False)
-                handler.set_canal(102) # Mantém outros em Sub Stream
+                handler.set_canal(self.obter_canal_alvo(ip))
 
         self.slot_maximized = index
         self.btn_expandir.lift()
@@ -703,7 +726,7 @@ class CentralMonitoramento(ctk.CTk):
         for ip, handler in self.camera_handlers.items():
             if handler == "CONECTANDO": continue
             handler.set_prioridade(False)
-            handler.set_canal(102) # Volta tudo para Sub Stream
+            handler.set_canal(self.obter_canal_alvo(ip))
 
         self.slot_maximized = None
         self.btn_expandir.lift()
@@ -1017,7 +1040,7 @@ class CentralMonitoramento(ctk.CTk):
 
             if ip != "0.0.0.0":
                 if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
-                canal_alvo = 102 # Sempre usa Sub Stream
+                canal_alvo = self.obter_canal_alvo(ip)
                 self.iniciar_conexao_assincrona(ip, canal_alvo)
 
     def selecionar_camera(self, ip):
@@ -1032,6 +1055,15 @@ class CentralMonitoramento(ctk.CTk):
     def pintar_predefinicao(self, nome, cor):
         if nome and nome in self.predefinicao_widgets:
             self.predefinicao_widgets[nome].configure(fg_color=cor)
+
+    def alternar_baixa_qualidade(self):
+        self.forcar_baixa_qualidade = self.switch_baixa_qualidade.get()
+        # print(f"LOG: Baixa Qualidade {'ativada' if self.forcar_baixa_qualidade else 'desativada'}")
+
+        # Atualiza todos os handlers imediatamente
+        for ip, handler in self.camera_handlers.items():
+            if handler != "CONECTANDO":
+                handler.set_canal(self.obter_canal_alvo(ip))
 
     def trocar_qualidade(self, ip, novo_canal):
         if not ip: return
@@ -1162,7 +1194,7 @@ class CentralMonitoramento(ctk.CTk):
                 handler = self.camera_handlers.get(ip)
                 if handler is None:
                     # Decide canal inicial dependendo se está maximizado ou não
-                    canal_alvo = 102 # Sempre usa Sub Stream
+                    canal_alvo = self.obter_canal_alvo(ip)
                     self.iniciar_conexao_assincrona(ip, canal_alvo)
                     continue
                 if handler == "CONECTANDO":
@@ -1179,7 +1211,15 @@ class CentralMonitoramento(ctk.CTk):
                     wf = int(max(10, wf - 6))
                     hf = int(max(10, hf - 6))
 
-                    handler.tamanho_alvo = (wf, hf)
+                    # Se baixa qualidade ativada e não é prioridade, limita resolução
+                    if self.forcar_baixa_qualidade and i != self.slot_maximized:
+                        wf, hf = min(wf, 320), min(hf, 240)
+
+                    # Só atualiza handler se o tamanho mudou (evita locks desnecessários)
+                    if self.cache_ui_size[i] != (wf, hf):
+                        handler.tamanho_alvo = (wf, hf)
+                        self.cache_ui_size[i] = (wf, hf)
+
                     # Usa LINEAR para maximizada e NEAREST para miniaturas (melhor performance)
                     handler.interpolation = cv2.INTER_LINEAR if self.slot_maximized == i else cv2.INTER_NEAREST
 
@@ -1586,7 +1626,7 @@ class CentralMonitoramento(ctk.CTk):
 
         # 4. Inicia conexões para os novos IPs (o staggered cuidará do resto)
         for ip in ips_novos_set:
-            self.iniciar_conexao_assincrona(ip, 102)
+            self.iniciar_conexao_assincrona(ip, self.obter_canal_alvo(ip))
 
         # 5. Restaura layout se necessário e seleciona slot
         if self.slot_maximized is not None:
