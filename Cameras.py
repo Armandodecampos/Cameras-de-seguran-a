@@ -14,7 +14,7 @@ os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp;stimeout;50000
 cv2.setNumThreads(1)
 
 # Semáforo global para limitar conexões simultâneas (evita travamentos)
-sem_conexao = threading.Semaphore(4)
+sem_conexao = threading.Semaphore(10)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
@@ -71,7 +71,7 @@ class CameraHandler:
     def iniciar(self):
         try:
             # 1. Verifica se o dispositivo está na rede
-            if not self.verificar_alcance(timeout=1.5):
+            if not self.verificar_alcance(timeout=0.8):
                 self.ultimo_erro = "OFFLINE"
                 print(f"Dispositivo offline: {self.ip_display}")
                 return False
@@ -79,7 +79,7 @@ class CameraHandler:
             print(f"Tentando conectar em: {self.ip_display} (Canal {self.canal})...")
 
             # 2. Loop de retentativa para abrir o stream
-            for tentativa in range(3):
+            for tentativa in range(2):
                 with sem_conexao:
                     self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
 
@@ -184,7 +184,7 @@ class CameraHandler:
                     time.sleep(0.01)
             else:
                 consecutive_failures += 1
-                if consecutive_failures > 300: # Aumentado para 300 para tolerar jitter de rede
+                if consecutive_failures > 100: # Reduzido para 100 para reconectar mais rápido
                     print(f"LOG: Camera {self.ip_display} sem frames. Tentando reconectar...")
                     if self.cap: self.cap.release()
                     with sem_conexao:
@@ -287,6 +287,9 @@ class CentralMonitoramento(ctk.CTk):
 
         # Cache persistente de CTkImage por slot para evitar "pyimage" explosion
         self.slot_ctk_images = [None] * 20
+        # Cache de estado da UI para evitar chamadas redundantes ao Tcl/Tk
+        self.cache_ui_text = [None] * 20
+        self.cache_ui_image = [None] * 20
         # Imagem 1x1 transparente para resets seguros
         self.img_vazia = ctk.CTkImage(Image.new('RGBA', (1, 1), (0,0,0,0)), size=(1, 1))
 
@@ -468,9 +471,9 @@ class CentralMonitoramento(ctk.CTk):
                     threading.Thread(target=self._thread_conectar, args=(ip, canal), daemon=True).start()
 
                     # Pausa maior para evitar picos de CPU/Rede durante trocas de predefinicoes
-                    time.sleep(0.15)
+                    time.sleep(0.05)
                 else:
-                    time.sleep(0.1)
+                    time.sleep(0.02)
             except Exception as e:
                 print(f"Erro no processador de conexões: {e}")
                 time.sleep(1)
@@ -953,6 +956,8 @@ class CentralMonitoramento(ctk.CTk):
 
             self.slot_labels[idx] = lbl
             self.slot_ctk_images[idx] = None
+            self.cache_ui_text[idx] = None
+            self.cache_ui_image[idx] = None
             return lbl
         except Exception as e:
             print(f"ERRO AO RECRIAR LABEL {idx}: {e}")
@@ -985,6 +990,8 @@ class CentralMonitoramento(ctk.CTk):
             # Tenta configurar o label existente
             self.slot_labels[idx].configure(image=self.img_vazia, text=txt)
             self.slot_labels[idx].image = self.img_vazia
+            self.cache_ui_text[idx] = txt
+            self.cache_ui_image[idx] = self.img_vazia
             # Limpa cache do slot para evitar fantasmas ou falhas de sincronia
             self.slot_ctk_images[idx] = None
         except Exception as e:
@@ -1123,11 +1130,13 @@ class CentralMonitoramento(ctk.CTk):
                     if ip == "0.0.0.0":
                         try:
                             target_text = f"Espaço {i+1}"
-                            # Verifica se precisa atualizar para evitar cintilação
-                            if (self.slot_labels[i].cget("text") != target_text or
-                                self.slot_labels[i].image != self.img_vazia):
+                            # Verifica se precisa atualizar para evitar cintilação (usando cache)
+                            if (self.cache_ui_text[i] != target_text or
+                                self.cache_ui_image[i] != self.img_vazia):
                                 self.slot_labels[i].configure(image=self.img_vazia, text=target_text)
                                 self.slot_labels[i].image = self.img_vazia
+                                self.cache_ui_text[i] = target_text
+                                self.cache_ui_image[i] = self.img_vazia
                                 self.slot_ctk_images[i] = None
                         except: pass
                     continue
@@ -1141,9 +1150,11 @@ class CentralMonitoramento(ctk.CTk):
                     if agora - ts < 10:
                         try:
                             target_status = f"{erro}\n{ip}" if i == self.slot_selecionado else erro
-                            if self.slot_labels[i].image != self.img_vazia or self.slot_labels[i].cget("text") != target_status:
+                            if self.cache_ui_image[i] != self.img_vazia or self.cache_ui_text[i] != target_status:
                                 self.slot_labels[i].configure(image=self.img_vazia, text=target_status)
                                 self.slot_labels[i].image = self.img_vazia
+                                self.cache_ui_text[i] = target_status
+                                self.cache_ui_image[i] = self.img_vazia
                                 self.slot_ctk_images[i] = None
                         except: pass
                         continue
@@ -1156,8 +1167,9 @@ class CentralMonitoramento(ctk.CTk):
                     continue
                 if handler == "CONECTANDO":
                     target_status = f"CONECTANDO...\n{ip}" if i == self.slot_selecionado else "CONECTANDO..."
-                    if self.slot_labels[i].cget("text") != target_status:
+                    if self.cache_ui_text[i] != target_status:
                         self.slot_labels[i].configure(text=target_status)
+                        self.cache_ui_text[i] = target_status
                     continue
 
                 try:
@@ -1192,9 +1204,11 @@ class CentralMonitoramento(ctk.CTk):
                                 self.slot_ctk_images[i].configure(light_image=pil_img, dark_image=pil_img, size=(wl, hl))
 
                             # SEMPRE garante que o label está apontando para o objeto de cache e sem texto
-                            if self.slot_labels[i].image != self.slot_ctk_images[i] or self.slot_labels[i].cget("text") != "":
+                            if self.cache_ui_image[i] != self.slot_ctk_images[i] or self.cache_ui_text[i] != "":
                                 self.slot_labels[i].configure(image=self.slot_ctk_images[i], text="")
                                 self.slot_labels[i].image = self.slot_ctk_images[i]
+                                self.cache_ui_image[i] = self.slot_ctk_images[i]
+                                self.cache_ui_text[i] = ""
                         except Exception as e:
                                 # print(f"DEBUG: Erro ao renderizar frame no slot {i}: {e}")
                                 # Se falhar muito, tentamos recriar o cache do slot
