@@ -649,6 +649,8 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 frm.grid_forget()
 
+        self.slot_maximized = index
+
         # Gerenciamento de Prioridade e Qualidade
         for ip, handler in self.camera_handlers.items():
             if handler == "CONECTANDO": continue
@@ -658,8 +660,6 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 handler.set_prioridade(False)
                 handler.set_canal(self.obter_canal_alvo(ip))
-
-        self.slot_maximized = index
         self.btn_expandir.lift()
         self.btn_mais_opcoes.lift()
 
@@ -1085,7 +1085,9 @@ class CentralMonitoramento(ctk.CTk):
 
         # Respeita cooldown de falha
         if ip in self.cooldown_conexoes:
-            if agora - self.cooldown_conexoes[ip] < 10: return
+            cooldown_data = self.cooldown_conexoes[ip]
+            ts = cooldown_data[0] if isinstance(cooldown_data, tuple) else cooldown_data
+            if agora - ts < 10: return
 
         # Verifica se já está conectando ou rodando
         if ip in self.camera_handlers:
@@ -1600,29 +1602,33 @@ class CentralMonitoramento(ctk.CTk):
 
         # print(f"Aplicando predefinição: {nome}")
 
-        # 1. Mapeia IPs atuais para saber o que fechar depois
-        ips_antigos = set(ip for ip in self.grid_cameras if ip and ip != "0.0.0.0")
+        # 1. Fecha TODAS as conexões atuais para começar do zero (conforme solicitado pelo usuário)
+        for ip_h in list(self.camera_handlers.keys()):
+            h = self.camera_handlers[ip_h]
+            if h != "CONECTANDO":
+                try: h.parar()
+                except: pass
+            del self.camera_handlers[ip_h]
 
-        # 2. Atualiza os dados do grid primeiro (silenciosamente)
+        # 2. Limpa filas e estados de conexão
+        while not self.fila_pendente_conexoes.empty():
+            try: self.fila_pendente_conexoes.get_nowait()
+            except: pass
+        self.ips_em_fila.clear()
+
+        # 3. Atualiza os dados do grid primeiro (silenciosamente)
         novos_ips = ["0.0.0.0"] * 20
+        ips_novos_set = set()
         for i in range(20):
             ip = predefinicao[i] if i < len(predefinicao) else "0.0.0.0"
             novos_ips[i] = ip
+            if ip and ip != "0.0.0.0":
+                ips_novos_set.add(ip)
 
             # Atualiza visualmente cada slot de forma segura
-            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False, salvar=False)
+            self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, gerenciar_conexoes=False, salvar=False, forcado=True)
 
         self.salvar_grid()
-
-        # 3. Identifica IPs que não estão mais no grid e fecha-os
-        ips_novos_set = set(ip for ip in novos_ips if ip and ip != "0.0.0.0")
-        for ip_off in (ips_antigos - ips_novos_set):
-            if ip_off in self.camera_handlers:
-                try:
-                    h = self.camera_handlers[ip_off]
-                    if hasattr(h, 'parar'): h.parar()
-                except: pass
-                del self.camera_handlers[ip_off]
 
         # 4. Inicia conexões para os novos IPs (o staggered cuidará do resto)
         for ip in ips_novos_set:
