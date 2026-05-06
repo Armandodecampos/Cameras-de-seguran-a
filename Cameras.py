@@ -447,7 +447,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Aplica automaticamente o último predefinição se existir
+        # Aplica automaticamente a última predefinição se existir
         if self.ultima_predefinicao and self.ultima_predefinicao in self.predefinicoes:
             self.after(500, lambda: self.aplicar_predefinicao(self.ultima_predefinicao))
 
@@ -989,15 +989,15 @@ class CentralMonitoramento(ctk.CTk):
     def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True, salvar=True, forcado=False):
         if not (0 <= idx < 20): return
 
+        # Otimização: se o IP for o mesmo, não faz nada (a menos que seja 0.0.0.0 ou forçado)
+        if not forcado and ip != "0.0.0.0" and self.grid_cameras[idx] == ip:
+            return
+
         # Limpa predefinição ao atribuir manualmente (se for uma atribuição direta, não via aplicar_predefinicao)
         # Note: 'aplicar_predefinicao' chama atribuir_ip_ao_slot com gerenciar_conexoes=False
         if gerenciar_conexoes and self.ultima_predefinicao:
             self.pintar_predefinicao(self.ultima_predefinicao, self.BG_SIDEBAR)
             self.ultima_predefinicao = None
-
-        # Otimização: se o IP for o mesmo, não faz nada (a menos que seja 0.0.0.0 ou forçado)
-        if not forcado and ip != "0.0.0.0" and self.grid_cameras[idx] == ip:
-            return
 
         ip_antigo = self.grid_cameras[idx]
         self.grid_cameras[idx] = ip
@@ -1579,7 +1579,7 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 self._salvar_predefinicao(nome)
 
-        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Nova Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_predefinicao(self, nome):
         self.predefinicoes[nome] = list(self.grid_cameras)
@@ -1643,17 +1643,14 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
-        self.predefinicoes[nome] = list(self.grid_cameras)
-        self.salvar_predefinicoes()
-        self.ultima_predefinicao = nome
-        self.atualizar_lista_predefinicoes_ui()
+        self._salvar_predefinicao(nome)
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
