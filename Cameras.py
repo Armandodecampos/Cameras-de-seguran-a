@@ -1118,8 +1118,16 @@ class CentralMonitoramento(ctk.CTk):
     def _pos_conexao(self, sucesso, camera_obj, ip, erro=None):
         if sucesso:
             # print(f"LOG: Conexão bem-sucedida com {ip}")
-            self.camera_handlers[ip] = camera_obj
-            if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+            # Verifica se o IP ainda é necessário antes de salvar o handler
+            if ip in self.grid_cameras:
+                self.camera_handlers[ip] = camera_obj
+                if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
+            else:
+                # O IP não está mais no grid, descartamos a conexão
+                # print(f"LOG: Descartando conexão de {ip} (não mais no grid)")
+                if ip in self.camera_handlers: del self.camera_handlers[ip]
+                try: camera_obj.parar()
+                except: pass
         else:
             # print(f"LOG: Falha na conexão final com {ip}")
             if ip in self.camera_handlers: del self.camera_handlers[ip]
@@ -1579,7 +1587,7 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 self._salvar_predefinicao(nome)
 
-        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Nova Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_predefinicao(self, nome):
         self.predefinicoes[nome] = list(self.grid_cameras)
@@ -1643,17 +1651,14 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
-        self.predefinicoes[nome] = list(self.grid_cameras)
-        self.salvar_predefinicoes()
-        self.ultima_predefinicao = nome
-        self.atualizar_lista_predefinicoes_ui()
+        self._salvar_predefinicao(nome)
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
