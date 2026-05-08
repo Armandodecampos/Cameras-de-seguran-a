@@ -447,7 +447,7 @@ class CentralMonitoramento(ctk.CTk):
                 self.tabview.set(self.aba_ativa)
         except: pass
 
-        # Aplica automaticamente o último predefinição se existir
+        # Aplica automaticamente a última predefinição se existir
         if self.ultima_predefinicao and self.ultima_predefinicao in self.predefinicoes:
             self.after(500, lambda: self.aplicar_predefinicao(self.ultima_predefinicao))
 
@@ -1579,7 +1579,7 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 self._salvar_predefinicao(nome)
 
-        self.abrir_modal_input("Salvar Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
+        self.abrir_modal_input("Nova Predefinição", "Digite um nome para esta predefinição:", on_name_entered)
 
     def _salvar_predefinicao(self, nome):
         self.predefinicoes[nome] = list(self.grid_cameras)
@@ -1617,11 +1617,9 @@ class CentralMonitoramento(ctk.CTk):
         self.ips_em_fila.clear()
 
         # 3. Atualiza os dados do grid primeiro (silenciosamente)
-        novos_ips = ["0.0.0.0"] * 20
         ips_novos_set = set()
         for i in range(20):
             ip = predefinicao[i] if i < len(predefinicao) else "0.0.0.0"
-            novos_ips[i] = ip
             if ip and ip != "0.0.0.0":
                 ips_novos_set.add(ip)
 
@@ -1643,17 +1641,14 @@ class CentralMonitoramento(ctk.CTk):
         # print(f"Predefinição '{nome}' aplicada!")
 
     def sobrescrever_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever o predefinição '{nome}' com a configuração atual?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja sobrescrever a predefinição '{nome}' com a configuração atual?",
                                      lambda: self._sobrescrever_predefinicao(nome))
 
     def _sobrescrever_predefinicao(self, nome):
-        self.predefinicoes[nome] = list(self.grid_cameras)
-        self.salvar_predefinicoes()
-        self.ultima_predefinicao = nome
-        self.atualizar_lista_predefinicoes_ui()
+        self._salvar_predefinicao(nome)
 
     def deletar_predefinicao(self, nome):
-        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir o predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Confirmar", f"Deseja realmente excluir a predefinição '{nome}'?",
                                      lambda: self._deletar_predefinicao(nome))
 
     def _deletar_predefinicao(self, nome):
