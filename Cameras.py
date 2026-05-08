@@ -306,15 +306,9 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
 
-        self.tabview = ctk.CTkTabview(self.sidebar, fg_color="transparent",
-                                      segmented_button_selected_color=self.ACCENT_RED,
-                                      segmented_button_unselected_hover_color=self.ACCENT_WINE,
-                                      text_color=self.TEXT_P)
-        self.tabview.pack(expand=True, fill="both", padx=5, pady=5)
-        self.tabview.add("Câmeras")
-
         # Conteúdo da Sidebar (Câmeras)
-        tab_cams = self.tabview.tab("Câmeras")
+        tab_cams = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+        tab_cams.pack(expand=True, fill="both", padx=5, pady=5)
 
         # Seletor de IP Manual
         self.criar_seletor_ip(tab_cams)
@@ -422,12 +416,6 @@ class CentralMonitoramento(ctk.CTk):
             try: self.state("zoomed")
             except: pass
         self.after(200, safe_zoom)
-
-        # Restaura estado da interface (aba ativa)
-        try:
-            if self.aba_ativa in ["Câmeras"]:
-                self.tabview.set(self.aba_ativa)
-        except: pass
 
         self.loop_exibicao()
 
@@ -589,7 +577,6 @@ class CentralMonitoramento(ctk.CTk):
             if not self.em_tela_cheia:
                 dados = {
                     "geometry": self.geometry(),
-                    "active_tab": self.tabview.get(),
                     "slot_selecionado": self.slot_selecionado
                 }
                 with open(self.arquivo_janela, "w") as f: json.dump(dados, f)
@@ -602,13 +589,7 @@ class CentralMonitoramento(ctk.CTk):
         if self.forcar_baixa_qualidade:
             return 102
 
-        # Se estiver maximizada, o IP maximizado usa 101
-        if self.slot_maximized is not None:
-            ip_max = self.grid_cameras[self.slot_maximized]
-            if ip == ip_max:
-                return 101
-
-        return 102
+        return 101
 
     def maximizar_slot(self, index):
         self.grid_frame.pack_configure(padx=0, pady=0)
@@ -1172,10 +1153,6 @@ class CentralMonitoramento(ctk.CTk):
                     hf = self.slot_frames[i].winfo_height()
                     wf = int(max(10, wf - 6))
                     hf = int(max(10, hf - 6))
-
-                    # Se baixa qualidade ativada e não é prioridade, limita resolução
-                    if self.forcar_baixa_qualidade and i != self.slot_maximized:
-                        wf, hf = min(wf, 320), min(hf, 240)
 
                     # Só atualiza handler se o tamanho mudou (evita locks desnecessários)
                     if self.cache_ui_size[i] != (wf, hf):
