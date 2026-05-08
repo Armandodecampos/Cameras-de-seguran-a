@@ -371,9 +371,6 @@ class CentralMonitoramento(ctk.CTk):
         for i in range(1): self.grid_frame.grid_columnconfigure(i, weight=1)
 
         # Botões de Controle
-        self.btn_expandir = ctk.CTkButton(self.grid_frame, text="Aumentar", width=100, height=35,
-                                           fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
-                                           corner_radius=0, command=self.toggle_grid_layout)
 
         self.btn_mais_opcoes = ctk.CTkButton(self.grid_frame, text="Mais Opções", width=100, height=35,
                                               fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
@@ -383,8 +380,8 @@ class CentralMonitoramento(ctk.CTk):
         self.slot_labels = []
         for i in range(1):
             row, col = 0, 0
-            frm = ctk.CTkFrame(self.grid_frame, fg_color=self.BG_SIDEBAR, corner_radius=2, border_width=2, border_color="black")
-            frm.grid(row=row, column=col, padx=1, pady=1, sticky="nsew")
+            frm = ctk.CTkFrame(self.grid_frame, fg_color=self.BG_SIDEBAR, corner_radius=2, border_width=4, border_color="black")
+            frm.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
             frm.pack_propagate(False)
 
             lbl = ctk.CTkLabel(frm, text=f"Espaço {i+1}", corner_radius=0)
@@ -616,7 +613,6 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 handler.set_prioridade(False)
                 handler.set_canal(self.obter_canal_alvo(ip))
-        self.btn_expandir.lift()
         self.btn_mais_opcoes.lift()
 
     def ao_pressionar_slot(self, event, index):
@@ -672,7 +668,7 @@ class CentralMonitoramento(ctk.CTk):
 
         for i, frm in enumerate(self.slot_frames):
             row, col = 0, 0
-            frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1, padx=1, pady=1, sticky="nsew")
+            frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1, padx=5, pady=5, sticky="nsew")
             frm.configure(corner_radius=2)
             frm.grid()
             for child in frm.winfo_children(): child.pack_configure(padx=2, pady=2)
@@ -684,21 +680,20 @@ class CentralMonitoramento(ctk.CTk):
             handler.set_canal(self.obter_canal_alvo(ip))
 
         self.slot_maximized = None
-        self.btn_expandir.lift()
+    def selecionar_slot(self, index):
         self.btn_mais_opcoes.lift()
 
-    def selecionar_slot(self, index):
         if not (0 <= index < 1): return
 
         # Desliga info de todos os handlers antes de trocar
         for ip_h, h in self.camera_handlers.items():
             if h != "CONECTANDO": h.set_exibir_info(False)
 
-        for frm in self.slot_frames: frm.configure(border_color="black", border_width=2)
+        for frm in self.slot_frames: frm.configure(border_color="black", border_width=4)
 
         ip_anterior = self.ip_selecionado
         self.slot_selecionado = index
-        self.slot_frames[index].configure(border_color=self.ACCENT_RED, border_width=2)
+        self.slot_frames[index].configure(border_color=self.ACCENT_RED, border_width=4)
 
         self.title(f"Monitoramento ABI - Espaço {index + 1} selecionado")
 
@@ -714,26 +709,14 @@ class CentralMonitoramento(ctk.CTk):
             if handler and handler != "CONECTANDO":
                 handler.set_exibir_info(True)
 
-            # Botões de Controle: Aumentar e Mais Opções
-            txt_exp = "Diminuir" if self.slot_maximized == index else "Aumentar"
-            self.btn_expandir.configure(text=txt_exp)
-
-            # Ordem: Aumentar (Esquerda) | Mais Opções (Direita)
-            self.btn_expandir.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-115, y=-10, anchor="se")
             self.btn_mais_opcoes.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
-
-            self.btn_expandir.lift()
             self.btn_mais_opcoes.lift()
 
-            # Sincroniza o seletor de IP
             self.sincronizar_seletor_com_ip(ip_novo)
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
-            self.btn_expandir.place_forget()
             self.btn_mais_opcoes.place_forget()
-        self.atualizar_botoes_controle()
-
     def limpar_slot_atual(self):
         self.press_data = None
         idx = self.slot_selecionado
@@ -743,10 +726,8 @@ class CentralMonitoramento(ctk.CTk):
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
         
-        self.btn_expandir.place_forget()
         self.btn_mais_opcoes.place_forget()
         
-        if self.slot_maximized == idx: self.restaurar_grid()
         self.selecionar_slot(idx)
 
     def salvar_grid(self):
@@ -772,16 +753,6 @@ class CentralMonitoramento(ctk.CTk):
             if ip and ip != "0.0.0.0" and ip not in self.camera_handlers:
                 self.iniciar_conexao_assincrona(ip, 102)
 
-    def atualizar_botoes_controle(self):
-        if self.slot_maximized is not None:
-            self.btn_expandir.configure(text="Diminuir", width=200, height=70, font=("Roboto", 16, "bold"))
-        else:
-            self.btn_expandir.configure(text="Aumentar", width=100, height=35, font=("Roboto", 12))
-
-    def toggle_grid_layout(self):
-        if self.slot_maximized is not None: self.restaurar_grid()
-        else: self.maximizar_slot(self.slot_selecionado)
-        self.atualizar_botoes_controle()
 
     def abrir_menu_opcoes(self):
         if not self.ip_selecionado: return
@@ -1073,7 +1044,6 @@ class CentralMonitoramento(ctk.CTk):
                         self.slot_labels[i].image = None
                         self.slot_ctk_images[i] = None
                     except: pass
-        self.atualizar_botoes_controle()
 
     def loop_exibicao(self):
         try:
@@ -1202,12 +1172,6 @@ class CentralMonitoramento(ctk.CTk):
                     # print(f"Erro render slot {i}: {e}")
                     pass
 
-            if self.btn_expandir.winfo_ismapped():
-                self.btn_expandir.lift()
-            if self.btn_mais_opcoes.winfo_ismapped():
-                self.btn_mais_opcoes.lift()
-
-        except Exception as e: print(f"Erro no loop de exibição: {e}")
         finally: self.after(50, self.loop_exibicao) # Ajustado para 50ms para equilibrar fluidez e CPU
 
     def filtrar_lista(self):
@@ -1365,7 +1329,6 @@ class CentralMonitoramento(ctk.CTk):
         frame_seletor = ctk.CTkFrame(parent, fg_color="transparent")
         frame_seletor.pack(fill="x", padx=10, pady=10)
 
-        ctk.CTkLabel(frame_seletor, text="SELETOR DE IP", font=("Roboto", 12, "bold"), text_color=self.TEXT_S).pack(pady=(0, 5))
 
         container_octetos = ctk.CTkFrame(frame_seletor, fg_color="transparent")
         container_octetos.pack()
