@@ -18,7 +18,7 @@ sem_conexao = threading.Semaphore(10)
 
 # --- CLASSE DE VÍDEO OTIMIZADA ---
 class CameraHandler:
-    def __init__(self, ip, canal=102, user="admin", password="password"):
+    def __init__(self, ip, canal=101, user="admin", password="password"):
         self.ip = ip
         self.canal = canal
         self.user = user
@@ -277,7 +277,6 @@ class CentralMonitoramento(ctk.CTk):
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None
         self.aba_ativa = "Câmeras"
-        self.forcar_baixa_qualidade = False
 
         self.carregar_posicao_janela()
         self.ips_unicos = self.carregar_lista_ips()
@@ -313,12 +312,6 @@ class CentralMonitoramento(ctk.CTk):
         # Seletor de IP Manual
         self.criar_seletor_ip(tab_cams)
 
-        # Toggle de Baixa Qualidade
-        self.switch_baixa_qualidade = ctk.CTkSwitch(tab_cams, text="Forçar Baixa Qualidade",
-                                                   progress_color=self.ACCENT_RED,
-                                                   command=self.alternar_baixa_qualidade)
-        self.switch_baixa_qualidade.pack(pady=10)
-
         self.frame_busca = ctk.CTkFrame(tab_cams, fg_color="transparent")
         self.frame_busca.pack(fill="x", padx=5, pady=5)
 
@@ -337,14 +330,6 @@ class CentralMonitoramento(ctk.CTk):
         # 2. Container Toggle Sidebar (Coluna 1)
         self.container_toggle = ctk.CTkFrame(self, fg_color=self.BG_PANEL, corner_radius=0)
         self.container_toggle.grid(row=0, column=1, sticky="ns")
-
-        self.lbl_lista_vertical = ctk.CTkLabel(
-            self.container_toggle,
-            text="L\nI\nS\nT\nA",
-            font=("Roboto", 11, "bold"),
-            text_color=self.TEXT_S
-        )
-        self.lbl_lista_vertical.pack(side="left", padx=(2, 0))
 
         self.btn_toggle_sidebar = ctk.CTkButton(
             self.container_toggle,
@@ -371,10 +356,6 @@ class CentralMonitoramento(ctk.CTk):
         for i in range(1): self.grid_frame.grid_columnconfigure(i, weight=1)
 
         # Botões de Controle
-
-        self.btn_mais_opcoes = ctk.CTkButton(self.grid_frame, text="Mais Opções", width=100, height=35,
-                                              fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
-                                              corner_radius=0, command=self.abrir_menu_opcoes)
 
         self.slot_frames = []
         self.slot_labels = []
@@ -582,10 +563,7 @@ class CentralMonitoramento(ctk.CTk):
         os._exit(0)
 
     def obter_canal_alvo(self, ip):
-        """Define se deve usar canal 101 (Main) ou 102 (Sub) baseado no estado do sistema."""
-        if self.forcar_baixa_qualidade:
-            return 102
-
+        """Define se deve usar canal 101 (Main) baseado no estado do sistema."""
         return 101
 
     def maximizar_slot(self, index):
@@ -613,7 +591,7 @@ class CentralMonitoramento(ctk.CTk):
             else:
                 handler.set_prioridade(False)
                 handler.set_canal(self.obter_canal_alvo(ip))
-        self.btn_mais_opcoes.lift()
+
 
     def ao_pressionar_slot(self, event, index):
         self.selecionar_slot(index)
@@ -681,7 +659,7 @@ class CentralMonitoramento(ctk.CTk):
 
         self.slot_maximized = None
     def selecionar_slot(self, index):
-        self.btn_mais_opcoes.lift()
+
 
         if not (0 <= index < 1): return
 
@@ -709,14 +687,14 @@ class CentralMonitoramento(ctk.CTk):
             if handler and handler != "CONECTANDO":
                 handler.set_exibir_info(True)
 
-            self.btn_mais_opcoes.place(in_=self.slot_frames[index], relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
-            self.btn_mais_opcoes.lift()
+
+
 
             self.sincronizar_seletor_com_ip(ip_novo)
         else:
             if ip_anterior: self.pintar_botao(ip_anterior, "transparent")
             self.ip_selecionado = None
-            self.btn_mais_opcoes.place_forget()
+
     def limpar_slot_atual(self):
         self.press_data = None
         idx = self.slot_selecionado
@@ -726,8 +704,8 @@ class CentralMonitoramento(ctk.CTk):
             self.pintar_botao(self.ip_selecionado, "transparent")
             self.ip_selecionado = None
         
-        self.btn_mais_opcoes.place_forget()
         
+
         self.selecionar_slot(idx)
 
     def salvar_grid(self):
@@ -751,85 +729,8 @@ class CentralMonitoramento(ctk.CTk):
     def alternar_todos_streams(self):
         for ip in set(self.grid_cameras):
             if ip and ip != "0.0.0.0" and ip not in self.camera_handlers:
-                self.iniciar_conexao_assincrona(ip, 102)
+                self.iniciar_conexao_assincrona(ip, 101)
 
-
-    def abrir_menu_opcoes(self):
-        if not self.ip_selecionado: return
-
-        nome = self.dados_cameras.get(self.ip_selecionado, "Câmera Sem Nome")
-        ip = self.ip_selecionado
-
-        # Cria a janela modal
-        modal = ctk.CTkToplevel(self)
-        modal.title(f"Opções - {ip}")
-        modal.geometry("400x350")
-        modal.resizable(False, False)
-        modal.attributes("-topmost", True)
-
-        # Tenta centralizar a janela em relação à aplicação
-        try:
-            self.update_idletasks()
-            x = self.winfo_x() + (self.winfo_width() // 2) - 200
-            y = self.winfo_y() + (self.winfo_height() // 2) - 175
-            modal.geometry(f"+{x}+{y}")
-        except: pass
-
-        # Conteúdo
-        ctk.CTkLabel(modal, text=nome if nome else "Sem Nome", font=("Roboto", 18, "bold"), text_color=self.TEXT_P).pack(pady=(20, 5))
-        ctk.CTkLabel(modal, text=ip, font=("Roboto", 14), text_color=self.TEXT_S).pack(pady=(0, 20))
-
-        # Botões com canto quadrado (corner_radius=0)
-        btn_excluir = ctk.CTkButton(modal, text="Excluir", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
-                                     corner_radius=0, height=40,
-                                     command=lambda: [self.limpar_slot_atual(), modal.destroy()])
-        btn_excluir.pack(fill="x", padx=40, pady=5)
-
-        btn_editar = ctk.CTkButton(modal, text="Editar", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
-                                    corner_radius=0, height=40,
-                                    command=lambda: [modal.destroy(), self.alternar_edicao_nome()])
-        btn_editar.pack(fill="x", padx=40, pady=5)
-
-        btn_fechar = ctk.CTkButton(modal, text="Fechar", fg_color="#444444", hover_color="#666666",
-                                    corner_radius=0, height=40,
-                                    command=modal.destroy)
-        btn_fechar.pack(fill="x", padx=40, pady=(20, 0))
-
-    def abrir_modal_input(self, titulo, mensagem, callback, valor_inicial=""):
-        modal = ctk.CTkToplevel(self)
-        modal.title(titulo)
-        modal.geometry("400x250")
-        modal.resizable(False, False)
-        modal.attributes("-topmost", True)
-
-        try:
-            self.update_idletasks()
-            x = self.winfo_x() + (self.winfo_width() // 2) - 200
-            y = self.winfo_y() + (self.winfo_height() // 2) - 125
-            modal.geometry(f"+{x}+{y}")
-        except: pass
-
-        ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P).pack(pady=(20, 10))
-
-        entry = ctk.CTkEntry(modal, width=300)
-        entry.insert(0, valor_inicial)
-        entry.pack(pady=10)
-        entry.focus_set()
-
-        def confirmar():
-            valor = entry.get()
-            modal.destroy()
-            callback(valor)
-
-        btn_confirmar = ctk.CTkButton(modal, text="Confirmar", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
-                                      corner_radius=0, height=40, command=confirmar)
-        btn_confirmar.pack(fill="x", padx=40, pady=5)
-
-        btn_cancelar = ctk.CTkButton(modal, text="Cancelar", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
-                                     corner_radius=0, height=40, command=modal.destroy)
-        btn_cancelar.pack(fill="x", padx=40, pady=5)
-
-        modal.bind("<Return>", lambda e: confirmar())
 
     def abrir_modal_confirmacao(self, titulo, mensagem, callback_sim):
         modal = ctk.CTkToplevel(self)
@@ -968,20 +869,11 @@ class CentralMonitoramento(ctk.CTk):
         if ip and ip in self.botoes_referencia: self.botoes_referencia[ip]['frame'].configure(fg_color=cor)
 
 
-    def alternar_baixa_qualidade(self):
-        self.forcar_baixa_qualidade = self.switch_baixa_qualidade.get()
-        # print(f"LOG: Baixa Qualidade {'ativada' if self.forcar_baixa_qualidade else 'desativada'}")
-
-        # Atualiza todos os handlers imediatamente
-        for ip, handler in self.camera_handlers.items():
-            if handler != "CONECTANDO":
-                handler.set_canal(self.obter_canal_alvo(ip))
-
     def trocar_qualidade(self, ip, novo_canal):
         if not ip: return
         handler = self.camera_handlers.get(ip)
         if handler and handler != "CONECTANDO":
-            if getattr(handler, 'canal', 102) != novo_canal:
+            if getattr(handler, 'canal', 101) != novo_canal:
                 handler.parar()
                 del self.camera_handlers[ip]
                 self.iniciar_conexao_assincrona(ip, novo_canal)
@@ -991,21 +883,13 @@ class CentralMonitoramento(ctk.CTk):
         if len(nome) > max_chars: return nome[:max_chars-3] + "..."
         return nome
 
-    def iniciar_conexao_assincrona(self, ip, canal=102):
+    def iniciar_conexao_assincrona(self, ip, canal=101):
         if not ip or ip == "0.0.0.0": return
         agora = time.time()
-
-        # Respeita cooldown de falha
-        if ip in self.cooldown_conexoes:
-            cooldown_data = self.cooldown_conexoes[ip]
-            ts = cooldown_data[0] if isinstance(cooldown_data, tuple) else cooldown_data
-            if agora - ts < 10: return
-
-        # Verifica se já está conectando ou rodando
         if ip in self.camera_handlers:
             handler = self.camera_handlers[ip]
             if handler == "CONECTANDO": return
-            if getattr(handler, 'rodando', False): return
+            if getattr(handler, "rodando", False): return
             del self.camera_handlers[ip]
 
         # Evita duplicar na fila
@@ -1186,25 +1070,27 @@ class CentralMonitoramento(ctk.CTk):
             if hasattr(self.scroll_frame, "_parent_canvas"): self.scroll_frame._parent_canvas.yview_moveto(0)
         except: pass
 
-    def alternar_edicao_nome(self):
-        if not self.ip_selecionado: return
-        self.abrir_modal_input("Renomear Câmera", "Digite o novo nome para a câmera:",
-                               self.salvar_nome, valor_inicial=self.dados_cameras.get(self.ip_selecionado, ""))
+    def alternar_edicao_nome(self, ip=None):
+        target_ip = ip if ip else self.ip_selecionado
+        if not target_ip: return
+        self.abrir_modal_input("Renomear Câmera", f"Digite o novo nome para a câmera {target_ip}:",
+                               lambda novo: self.salvar_nome(novo, target_ip),
+                               valor_inicial=self.dados_cameras.get(target_ip, ""))
 
-    def salvar_nome(self, novo_nome):
-        if self.ip_selecionado:
-            self.dados_cameras[self.ip_selecionado] = novo_nome
+    def salvar_nome(self, novo_nome, ip):
+        if ip:
+            self.dados_cameras[ip] = novo_nome
             with open(self.arquivo_config, "w", encoding='utf-8') as f:
                 json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
 
             # Atualiza handler se existir
-            handler = self.camera_handlers.get(self.ip_selecionado)
+            handler = self.camera_handlers.get(ip)
             if handler and handler != "CONECTANDO":
                 handler.nome_display = novo_nome
 
             # Atualiza UI se estiver visível
-            if self.ip_selecionado in self.botoes_referencia:
-                self.botoes_referencia[self.ip_selecionado]['lbl_nome'].configure(text=novo_nome)
+            if ip in self.botoes_referencia:
+                self.botoes_referencia[ip]['lbl_nome'].configure(text=novo_nome)
             self.filtrar_lista()
 
     def abrir_modal_adicionar_camera(self):
@@ -1412,7 +1298,7 @@ class CentralMonitoramento(ctk.CTk):
         for ip in self.obter_ips_ordenados():
             nome = self.dados_cameras.get(ip, f"IP {ip}")
             cor = self.ACCENT_WINE if ip == self.ip_selecionado else "transparent"
-            frm = ctk.CTkFrame(self.scroll_frame, height=50, fg_color=cor, border_width=1, border_color=self.GRAY_DARK)
+            frm = ctk.CTkFrame(self.scroll_frame, height=50, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2); frm.pack_propagate(False)
 
             # Container para o texto (Label)
@@ -1428,7 +1314,13 @@ class CentralMonitoramento(ctk.CTk):
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color="transparent",
                                      text_color=self.TEXT_S, hover_color=self.ACCENT_RED,
                                      command=lambda x=ip: self.confirmar_exclusao_camera_da_lista(x))
-            btn_del.pack(side="right", padx=5)
+            btn_del.pack(side="right", padx=2)
+
+            # Botão de Editar
+            btn_edit = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color="transparent",
+                                      text_color=self.TEXT_S, hover_color=self.GRAY_DARK,
+                                      command=lambda x=ip: self.alternar_edicao_nome(x))
+            btn_edit.pack(side="right", padx=2)
 
             for widget in [txt_container, lbl_nome, lbl_ip]:
                 widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
