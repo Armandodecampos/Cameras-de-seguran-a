@@ -261,6 +261,7 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_grid = os.path.join(user_dir, "grid_config_abi.json")
         self.arquivo_janela = os.path.join(user_dir, "config_janela_abi.json")
         self.arquivo_ips = os.path.join(user_dir, "lista_ips_abi.json")
+        self.arquivo_presets = os.path.join(user_dir, "presets_config_abi.json")
 
         self.botoes_referencia = {}
         self.ip_selecionado = None
@@ -282,6 +283,7 @@ class CentralMonitoramento(ctk.CTk):
         self.ips_unicos = self.carregar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.grid_cameras = self.carregar_grid()
+        self.presets = self.carregar_presets()
 
         # Cache persistente de CTkImage por slot para evitar "pyimage" explosion
         self.slot_ctk_images = [None] * 1
@@ -305,14 +307,24 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
 
-        # Conteúdo da Sidebar (Câmeras)
-        tab_cams = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        tab_cams.pack(expand=True, fill="both", padx=5, pady=5)
+        # Seletor de Abas no topo da Sidebar
+        self.segmented_button = ctk.CTkSegmentedButton(self.sidebar, values=["Câmeras", "Presets"],
+                                                       command=self.mudar_aba_sidebar,
+                                                       fg_color=self.BG_PANEL,
+                                                       selected_color=self.ACCENT_RED,
+                                                       selected_hover_color=self.ACCENT_WINE,
+                                                       unselected_color=self.BG_PANEL,
+                                                       unselected_hover_color=self.GRAY_DARK,
+                                                       corner_radius=0)
+        self.segmented_button.pack(fill="x", padx=5, pady=10)
+        self.segmented_button.set(self.aba_ativa)
 
+        # --- FRAME DE CÂMERAS ---
+        self.frame_cameras = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         # Seletor de IP Manual
-        self.criar_seletor_ip(tab_cams)
+        self.criar_seletor_ip(self.frame_cameras)
 
-        self.frame_busca = ctk.CTkFrame(tab_cams, fg_color="transparent")
+        self.frame_busca = ctk.CTkFrame(self.frame_cameras, fg_color="transparent")
         self.frame_busca.pack(fill="x", padx=5, pady=5)
 
         self.entry_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="Filtrar...")
@@ -324,8 +336,28 @@ class CentralMonitoramento(ctk.CTk):
                                           command=self.abrir_modal_adicionar_camera)
         self.btn_add_cam.pack(side="right")
 
-        self.scroll_frame = ctk.CTkScrollableFrame(tab_cams, fg_color="transparent")
+        self.scroll_frame = ctk.CTkScrollableFrame(self.frame_cameras, fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=0, pady=5)
+
+        # --- FRAME DE PRESETS ---
+        self.frame_presets = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+
+        ctk.CTkLabel(self.frame_presets, text="Predefinições de Grade", font=("Roboto", 16, "bold"), text_color=self.ACCENT_RED).pack(pady=10)
+
+        self.btn_salvar_preset = ctk.CTkButton(self.frame_presets, text="Salvar Configuração Atual",
+                                              fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                              height=40, corner_radius=0,
+                                              command=lambda: self.abrir_modal_input("Novo Preset", "Nome da Predefinição:", self.salvar_preset_atual))
+        self.btn_salvar_preset.pack(fill="x", padx=10, pady=10)
+
+        self.scroll_presets = ctk.CTkScrollableFrame(self.frame_presets, fg_color="transparent")
+        self.scroll_presets.pack(expand=True, fill="both", padx=0, pady=5)
+
+        # Inicializa a visibilidade das abas
+        if self.aba_ativa == "Câmeras":
+            self.frame_cameras.pack(expand=True, fill="both", padx=5, pady=5)
+        else:
+            self.frame_presets.pack(expand=True, fill="both", padx=5, pady=5)
 
         # 2. Container Toggle Sidebar (Coluna 1)
         self.container_toggle = ctk.CTkFrame(self, fg_color=self.BG_PANEL, corner_radius=0)
@@ -441,6 +473,16 @@ class CentralMonitoramento(ctk.CTk):
             self.sidebar.grid(row=0, column=0, sticky="nsew")
             self.btn_toggle_sidebar.configure(text="◀")
             self.sidebar_visible = True
+
+    def mudar_aba_sidebar(self, aba):
+        self.aba_ativa = aba
+        if aba == "Câmeras":
+            self.frame_presets.pack_forget()
+            self.frame_cameras.pack(expand=True, fill="both", padx=5, pady=5)
+        else:
+            self.frame_cameras.pack_forget()
+            self.frame_presets.pack(expand=True, fill="both", padx=5, pady=5)
+            self.atualizar_lista_presets_ui()
 
     # --- LÓGICA PTZ ---
     def comando_ptz(self, direcao):
@@ -1070,6 +1112,40 @@ class CentralMonitoramento(ctk.CTk):
             if hasattr(self.scroll_frame, "_parent_canvas"): self.scroll_frame._parent_canvas.yview_moveto(0)
         except: pass
 
+    def abrir_modal_input(self, titulo, mensagem, callback, valor_inicial=""):
+        modal = ctk.CTkToplevel(self)
+        modal.title(titulo)
+        modal.geometry("400x250")
+        modal.resizable(False, False)
+        modal.attributes("-topmost", True)
+
+        try:
+            self.update_idletasks()
+            x = self.winfo_x() + (self.winfo_width() // 2) - 200
+            y = self.winfo_y() + (self.winfo_height() // 2) - 125
+            modal.geometry(f"+{x}+{y}")
+        except: pass
+
+        ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, wraplength=320).pack(pady=(30, 10))
+
+        entry = ctk.CTkEntry(modal, width=300)
+        entry.insert(0, valor_inicial)
+        entry.pack(pady=10)
+        entry.focus_set()
+
+        def confirmar():
+            valor = entry.get().strip()
+            if valor:
+                modal.destroy()
+                callback(valor)
+
+        btn_conf = ctk.CTkButton(modal, text="Confirmar", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                  corner_radius=0, height=40, command=confirmar)
+        btn_conf.pack(fill="x", padx=40, pady=10)
+
+        modal.bind("<Return>", lambda e: confirmar())
+        modal.bind("<Escape>", lambda e: modal.destroy())
+
     def alternar_edicao_nome(self, ip=None):
         target_ip = ip if ip else self.ip_selecionado
         if not target_ip: return
@@ -1206,6 +1282,71 @@ class CentralMonitoramento(ctk.CTk):
                 with open(self.arquivo_config, "r", encoding='utf-8') as f: return json.load(f)
             except: pass
         return {}
+
+    def carregar_presets(self):
+        if os.path.exists(self.arquivo_presets):
+            try:
+                with open(self.arquivo_presets, "r", encoding='utf-8') as f:
+                    return json.load(f)
+            except: pass
+        return {}
+
+    def salvar_presets(self):
+        try:
+            with open(self.arquivo_presets, "w", encoding='utf-8') as f:
+                json.dump(self.presets, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Erro ao salvar presets: {e}")
+
+    def salvar_preset_atual(self, nome):
+        self.presets[nome] = list(self.grid_cameras)
+        self.salvar_presets()
+        self.atualizar_lista_presets_ui()
+
+    def aplicar_preset(self, nome):
+        lista_ips = self.presets.get(nome)
+        if lista_ips:
+            for i, ip in enumerate(lista_ips):
+                if i < len(self.slot_labels):
+                    self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, salvar=False)
+            self.salvar_grid()
+            self.update_idletasks()
+            self.alternar_todos_streams()
+
+    def excluir_preset(self, nome):
+        if nome in self.presets:
+            del self.presets[nome]
+            self.salvar_presets()
+            self.atualizar_lista_presets_ui()
+
+    def renomear_preset(self, nome_antigo, nome_novo):
+        if nome_antigo in self.presets and nome_novo:
+            self.presets[nome_novo] = self.presets.pop(nome_antigo)
+            self.salvar_presets()
+            self.atualizar_lista_presets_ui()
+
+    def atualizar_lista_presets_ui(self):
+        for child in self.scroll_presets.winfo_children():
+            child.destroy()
+
+        for nome in sorted(self.presets.keys()):
+            frm = ctk.CTkFrame(self.scroll_presets, height=50, fg_color="transparent", border_width=2, border_color=self.GRAY_DARK)
+            frm.pack(fill="x", pady=2); frm.pack_propagate(False)
+
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w")
+            lbl.pack(side="left", fill="both", expand=True, padx=10)
+            lbl.configure(cursor="hand2")
+            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
+
+            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color="transparent",
+                                     text_color=self.TEXT_S, hover_color=self.ACCENT_RED,
+                                     command=lambda n=nome: self.abrir_modal_confirmacao("Excluir Preset", f"Deseja excluir o preset '{n}'?", lambda: self.excluir_preset(n)))
+            btn_del.pack(side="right", padx=2)
+
+            btn_edit = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color="transparent",
+                                      text_color=self.TEXT_S, hover_color=self.GRAY_DARK,
+                                      command=lambda n=nome: self.abrir_modal_input("Renomear Preset", f"Novo nome para '{n}':", lambda novo, antigo=n: self.renomear_preset(antigo, novo), valor_inicial=n))
+            btn_edit.pack(side="right", padx=2)
 
     def obter_ips_ordenados(self):
         def chave_ordenacao(ip): return self.dados_cameras.get(ip, f"IP {ip}").lower()
