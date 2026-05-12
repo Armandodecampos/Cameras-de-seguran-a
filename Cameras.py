@@ -299,14 +299,14 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar_visible = True
 
         # --- LAYOUT ATUALIZADO ---
-        self.grid_columnconfigure(0, weight=1) # Main expande
+        self.grid_columnconfigure(0, weight=0) # Sidebar fixa
         self.grid_columnconfigure(1, weight=0) # Botão toggle fixo
-        self.grid_columnconfigure(2, weight=0) # Sidebar fixa
+        self.grid_columnconfigure(2, weight=1) # Main expande
         self.grid_rowconfigure(0, weight=1)
 
-        # 1. Sidebar (Coluna 2)
+        # 1. Sidebar (Coluna 0)
         self.sidebar = ctk.CTkFrame(self, width=450, corner_radius=0, fg_color=self.BG_SIDEBAR)
-        self.sidebar.grid(row=0, column=2, sticky="nsew")
+        self.sidebar.grid(row=0, column=0, sticky="nsew")
 
         # Conteúdo da Sidebar (Câmeras)
         tab_cams = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -336,7 +336,7 @@ class CentralMonitoramento(ctk.CTk):
 
         self.btn_toggle_sidebar = ctk.CTkButton(
             self.container_toggle,
-            text="▶",
+            text="◀",
             width=40,
             corner_radius=0,
             font=("Roboto", 24, "bold"),
@@ -349,9 +349,9 @@ class CentralMonitoramento(ctk.CTk):
         self.container_toggle.configure(cursor="sb_h_double_arrow")
         self.container_toggle.bind("<B1-Motion>", self.ao_arrastar_divisor)
 
-        # 3. Main Frame (Coluna 0)
+        # 3. Main Frame (Coluna 2)
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
-        self.main_frame.grid(row=0, column=0, sticky="nsew")
+        self.main_frame.grid(row=0, column=2, sticky="nsew")
 
         # Grid Frame (Câmeras)
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
@@ -451,11 +451,9 @@ class CentralMonitoramento(ctk.CTk):
         x_mouse = event.x_root
         # Coordenada X da janela principal
         x_janela = self.winfo_rootx()
-        # Largura total da janela
-        w_janela = self.winfo_width()
 
-        # Nova largura do painel lateral (que está na direita)
-        nova_largura = x_janela + w_janela - x_mouse
+        # Nova largura do painel lateral (que está na esquerda)
+        nova_largura = x_mouse - x_janela
 
         # Limites de segurança
         if 200 < nova_largura < 800:
@@ -465,11 +463,11 @@ class CentralMonitoramento(ctk.CTk):
     def toggle_sidebar(self):
         if self.sidebar_visible:
             self.sidebar.grid_forget()
-            self.btn_toggle_sidebar.configure(text="◀")
+            self.btn_toggle_sidebar.configure(text="▶")
             self.sidebar_visible = False
         else:
-            self.sidebar.grid(row=0, column=2, sticky="nsew")
-            self.btn_toggle_sidebar.configure(text="▶")
+            self.sidebar.grid(row=0, column=0, sticky="nsew")
+            self.btn_toggle_sidebar.configure(text="◀")
             self.sidebar_visible = True
 
     # --- LÓGICA PTZ ---
@@ -546,10 +544,10 @@ class CentralMonitoramento(ctk.CTk):
         if hasattr(self, 'btn_sair_fs'): self.btn_sair_fs.destroy()
 
         if self.sidebar_visible:
-            self.sidebar.grid(row=0, column=2, sticky="nsew")
+            self.sidebar.grid(row=0, column=0, sticky="nsew")
         
         self.container_toggle.grid(row=0, column=1, sticky="ns")
-        self.main_frame.grid_configure(column=0, columnspan=1)
+        self.main_frame.grid_configure(column=2, columnspan=1)
         
         self.grid_frame.pack_forget()
         padx_grid = 0 if self.slot_maximized is not None else 0
@@ -1409,10 +1407,10 @@ class CentralMonitoramento(ctk.CTk):
             txt_container = ctk.CTkFrame(frm, fg_color="transparent")
             txt_container.pack(side="left", fill="both", expand=True)
 
-            lbl_nome = ctk.CTkLabel(txt_container, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w")
-            lbl_nome.pack(fill="x", padx=10, pady=(4, 0))
-            lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 11), text_color=self.TEXT_S, anchor="w")
-            lbl_ip.pack(fill="x", padx=10, pady=(0, 4))
+            lbl_nome = ctk.CTkLabel(txt_container, text=nome, font=("Roboto", 15, "bold"), text_color=self.TEXT_P, anchor="w")
+            lbl_nome.pack(fill="x", padx=10, pady=(15, 0))
+            lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 13), text_color=self.TEXT_S, anchor="w")
+            lbl_ip.pack(fill="x", padx=10, pady=(0, 5))
 
             for widget in [txt_container, lbl_nome, lbl_ip, lbl_thumb]:
                 widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
