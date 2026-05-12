@@ -465,8 +465,7 @@ class CentralMonitoramento(ctk.CTk):
             # Atualiza wraplength de todos os labels de nome/IP na lista
             for item in self.botoes_referencia.values():
                 # Texto agora fica abaixo da imagem, então pode ocupar quase toda a largura
-                # Descontando os botões da direita (aprox 100px) e paddings
-                wrap = max(50, nova_largura - 120)
+                wrap = max(50, nova_largura - 40)
                 try:
                     item['lbl_nome'].configure(wraplength=wrap)
                     item['lbl_ip'].configure(wraplength=wrap)
@@ -1378,8 +1377,8 @@ class CentralMonitoramento(ctk.CTk):
         for ip in self.obter_ips_ordenados():
             nome = self.dados_cameras.get(ip, f"IP {ip}")
             cor = self.ACCENT_WINE if ip == self.ip_selecionado else "transparent"
-            frm = ctk.CTkFrame(self.scroll_frame, height=280, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
-            frm.pack(fill="x", pady=8); frm.pack_propagate(False)
+            frm = ctk.CTkFrame(self.scroll_frame, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
+            frm.pack(fill="x", pady=4)
 
             # Thumbnail
             thumb_img = self.cache_thumbnails.get(ip)
@@ -1396,26 +1395,24 @@ class CentralMonitoramento(ctk.CTk):
                     thumb_img = self.img_vazia
 
             lbl_thumb = ctk.CTkLabel(frm, image=thumb_img, text="", width=180, height=136, fg_color="black")
-            lbl_thumb.pack(side="top", pady=5)
+            lbl_thumb.pack(side="top", pady=(5, 2))
 
             # Container inferior para texto e botões
             bottom_frame = ctk.CTkFrame(frm, fg_color="transparent")
-            bottom_frame.pack(side="bottom", fill="x", padx=5, pady=5)
-
-            # Container para o texto (Label)
-            txt_container = ctk.CTkFrame(bottom_frame, fg_color="transparent")
-            txt_container.pack(side="left", fill="both", expand=True)
+            bottom_frame.pack(side="top", fill="x", padx=5, pady=(0, 5))
 
             # Calcula wraplength inicial baseado na largura da sidebar
-            wrap_inicial = max(50, self.sidebar.winfo_width() - 100)
-            lbl_nome = ctk.CTkLabel(txt_container, text=nome, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, anchor="w", justify="left", wraplength=wrap_inicial)
+            wrap_inicial = max(50, self.sidebar.winfo_width() - 40)
+
+            lbl_nome = ctk.CTkLabel(bottom_frame, text=nome, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, anchor="w", justify="left", wraplength=wrap_inicial)
             lbl_nome.pack(fill="x")
-            lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 12), text_color=self.TEXT_S, anchor="w", justify="left", wraplength=wrap_inicial)
+
+            lbl_ip = ctk.CTkLabel(bottom_frame, text=ip, font=("Roboto", 12), text_color=self.TEXT_S, anchor="w", justify="left", wraplength=wrap_inicial)
             lbl_ip.pack(fill="x")
 
             # Container para botões
             btn_container = ctk.CTkFrame(bottom_frame, fg_color="transparent")
-            btn_container.pack(side="right")
+            btn_container.pack(fill="x", pady=(2, 0))
 
             # Botão de Tirar Print
             btn_snap = ctk.CTkButton(btn_container, text="📸", width=30, height=30, fg_color="transparent",
@@ -1435,7 +1432,7 @@ class CentralMonitoramento(ctk.CTk):
                                      command=lambda x=ip: self.confirmar_exclusao_camera_da_lista(x))
             btn_del.pack(side="left", padx=1)
 
-            for widget in [frm, txt_container, lbl_nome, lbl_ip, lbl_thumb]:
+            for widget in [frm, bottom_frame, lbl_nome, lbl_ip, lbl_thumb]:
                 widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
                 widget.configure(cursor="hand2")
 
