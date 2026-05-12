@@ -337,17 +337,20 @@ class CentralMonitoramento(ctk.CTk):
         self.btn_toggle_sidebar = ctk.CTkButton(
             self.container_toggle,
             text="◀",
-            width=40,
+            width=25,
             corner_radius=0,
-            font=("Roboto", 24, "bold"),
+            font=("Roboto", 16, "bold"),
             fg_color=self.BG_PANEL,
             hover_color=self.ACCENT_WINE,
             text_color=self.ACCENT_RED,
             command=self.toggle_sidebar
         )
         self.btn_toggle_sidebar.pack(side="right", fill="y")
-        self.container_toggle.configure(cursor="sb_h_double_arrow")
+        self.container_toggle.configure(width=15, cursor="sb_h_double_arrow")
         self.container_toggle.bind("<B1-Motion>", self.ao_arrastar_divisor)
+        # Garante que o botão também tenha o cursor de resize e permita o drag
+        self.btn_toggle_sidebar.configure(cursor="sb_h_double_arrow")
+        self.btn_toggle_sidebar.bind("<B1-Motion>", self.ao_arrastar_divisor)
 
         # 3. Main Frame (Coluna 2)
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
@@ -458,6 +461,15 @@ class CentralMonitoramento(ctk.CTk):
         # Limites de segurança
         if 200 < nova_largura < 800:
             self.sidebar.configure(width=nova_largura)
+
+            # Atualiza wraplength de todos os labels de nome/IP na lista
+            for item in self.botoes_referencia.values():
+                # Desconta o tamanho do thumbnail (180) e paddings (aprox 100)
+                wrap = max(50, nova_largura - 280)
+                try:
+                    item['lbl_nome'].configure(wraplength=wrap)
+                    item['lbl_ip'].configure(wraplength=wrap)
+                except: pass
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
     def toggle_sidebar(self):
@@ -1365,7 +1377,7 @@ class CentralMonitoramento(ctk.CTk):
         for ip in self.obter_ips_ordenados():
             nome = self.dados_cameras.get(ip, f"IP {ip}")
             cor = self.ACCENT_WINE if ip == self.ip_selecionado else "transparent"
-            frm = ctk.CTkFrame(self.scroll_frame, height=85, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
+            frm = ctk.CTkFrame(self.scroll_frame, height=160, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2); frm.pack_propagate(False)
 
             # Thumbnail
@@ -1375,14 +1387,14 @@ class CentralMonitoramento(ctk.CTk):
                 if os.path.exists(caminho):
                     try:
                         pil_img = Image.open(caminho)
-                        thumb_img = ctk.CTkImage(pil_img, size=(90, 68))
+                        thumb_img = ctk.CTkImage(pil_img, size=(180, 136))
                         self.cache_thumbnails[ip] = thumb_img
                     except:
                         thumb_img = self.img_vazia
                 else:
                     thumb_img = self.img_vazia
 
-            lbl_thumb = ctk.CTkLabel(frm, image=thumb_img, text="", width=90, height=68, fg_color="black")
+            lbl_thumb = ctk.CTkLabel(frm, image=thumb_img, text="", width=180, height=136, fg_color="black")
             lbl_thumb.pack(side="left", padx=5)
 
             # Botão de Deletar
@@ -1407,9 +1419,11 @@ class CentralMonitoramento(ctk.CTk):
             txt_container = ctk.CTkFrame(frm, fg_color="transparent")
             txt_container.pack(side="left", fill="both", expand=True)
 
-            lbl_nome = ctk.CTkLabel(txt_container, text=nome, font=("Roboto", 15, "bold"), text_color=self.TEXT_P, anchor="w")
+            # Calcula wraplength inicial baseado na largura da sidebar
+            wrap_inicial = max(50, self.sidebar.winfo_width() - 280)
+            lbl_nome = ctk.CTkLabel(txt_container, text=nome, font=("Roboto", 15, "bold"), text_color=self.TEXT_P, anchor="w", justify="left", wraplength=wrap_inicial)
             lbl_nome.pack(fill="x", padx=10, pady=(15, 0))
-            lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 13), text_color=self.TEXT_S, anchor="w")
+            lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 13), text_color=self.TEXT_S, anchor="w", justify="left", wraplength=wrap_inicial)
             lbl_ip.pack(fill="x", padx=10, pady=(0, 5))
 
             for widget in [txt_container, lbl_nome, lbl_ip, lbl_thumb]:
