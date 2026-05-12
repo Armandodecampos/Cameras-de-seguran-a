@@ -261,8 +261,11 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_grid = os.path.join(user_dir, "grid_config_abi.json")
         self.arquivo_janela = os.path.join(user_dir, "config_janela_abi.json")
         self.arquivo_ips = os.path.join(user_dir, "lista_ips_abi.json")
+        self.diretorio_snapshots = os.path.join(user_dir, "snapshots_abi")
+        os.makedirs(self.diretorio_snapshots, exist_ok=True)
 
         self.botoes_referencia = {}
+        self.cache_thumbnails = {}
         self.ip_selecionado = None
         self.camera_handlers = {}
         self.em_tela_cheia = False
@@ -356,6 +359,13 @@ class CentralMonitoramento(ctk.CTk):
         for i in range(1): self.grid_frame.grid_columnconfigure(i, weight=1)
 
         # Botões de Controle
+        self.frame_controles = ctk.CTkFrame(self.main_frame, height=50, fg_color="transparent")
+        self.frame_controles.pack(side="bottom", fill="x", padx=10, pady=5)
+
+        self.btn_print = ctk.CTkButton(self.frame_controles, text="Tirar Foto 📸",
+                                        fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                        command=lambda: self.tirar_snapshot())
+        self.btn_print.pack(side="left", padx=5)
 
         self.slot_frames = []
         self.slot_labels = []
@@ -1167,6 +1177,16 @@ class CentralMonitoramento(ctk.CTk):
                     json.dump(self.dados_cameras, f, ensure_ascii=False, indent=4)
 
             self.salvar_lista_ips()
+
+            # Remove snapshot associado
+            try:
+                caminho = os.path.join(self.diretorio_snapshots, f"{ip}.jpg")
+                if os.path.exists(caminho):
+                    os.remove(caminho)
+                if ip in self.cache_thumbnails:
+                    del self.cache_thumbnails[ip]
+            except: pass
+
             self.atualizar_lista_cameras_ui()
             self.filtrar_lista()
 
@@ -1290,6 +1310,35 @@ class CentralMonitoramento(ctk.CTk):
         except:
             pass
 
+    def tirar_snapshot(self, ip=None):
+        target_ip = ip if ip else self.ip_selecionado
+        if not target_ip or target_ip == "0.0.0.0":
+            return
+
+        handler = self.camera_handlers.get(target_ip)
+        if not handler or handler == "CONECTANDO":
+            return
+
+        with handler.lock:
+            frame = handler.frame_pil
+            if frame:
+                frame_copy = frame.copy()
+            else:
+                frame_copy = None
+
+        if frame_copy:
+            def save_thread():
+                try:
+                    caminho = os.path.join(self.diretorio_snapshots, f"{target_ip}.jpg")
+                    frame_copy.save(caminho, "JPEG", quality=85)
+                    # Força atualização do cache de thumbnail
+                    self.cache_thumbnails[target_ip] = None
+                    self.after(10, self.atualizar_lista_cameras_ui)
+                except Exception as e:
+                    print(f"Erro ao salvar snapshot de {target_ip}: {e}")
+
+            threading.Thread(target=save_thread, daemon=True).start()
+
     def atualizar_lista_cameras_ui(self):
         for child in self.scroll_frame.winfo_children():
             child.destroy()
@@ -1298,17 +1347,25 @@ class CentralMonitoramento(ctk.CTk):
         for ip in self.obter_ips_ordenados():
             nome = self.dados_cameras.get(ip, f"IP {ip}")
             cor = self.ACCENT_WINE if ip == self.ip_selecionado else "transparent"
-            frm = ctk.CTkFrame(self.scroll_frame, height=50, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
+            frm = ctk.CTkFrame(self.scroll_frame, height=60, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2); frm.pack_propagate(False)
 
-            # Container para o texto (Label)
-            txt_container = ctk.CTkFrame(frm, fg_color="transparent")
-            txt_container.pack(side="left", fill="both", expand=True)
+            # Thumbnail
+            thumb_img = self.cache_thumbnails.get(ip)
+            if thumb_img is None:
+                caminho = os.path.join(self.diretorio_snapshots, f"{ip}.jpg")
+                if os.path.exists(caminho):
+                    try:
+                        pil_img = Image.open(caminho)
+                        thumb_img = ctk.CTkImage(pil_img, size=(60, 45))
+                        self.cache_thumbnails[ip] = thumb_img
+                    except:
+                        thumb_img = self.img_vazia
+                else:
+                    thumb_img = self.img_vazia
 
-            lbl_nome = ctk.CTkLabel(txt_container, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w")
-            lbl_nome.pack(fill="x", padx=10, pady=(4, 0))
-            lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 11), text_color=self.TEXT_S, anchor="w")
-            lbl_ip.pack(fill="x", padx=10, pady=(0, 4))
+            lbl_thumb = ctk.CTkLabel(frm, image=thumb_img, text="", width=60, height=45, fg_color="black")
+            lbl_thumb.pack(side="left", padx=5)
 
             # Botão de Deletar
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color="transparent",
@@ -1322,7 +1379,22 @@ class CentralMonitoramento(ctk.CTk):
                                       command=lambda x=ip: self.alternar_edicao_nome(x))
             btn_edit.pack(side="right", padx=2)
 
-            for widget in [txt_container, lbl_nome, lbl_ip]:
+            # Botão de Tirar Print
+            btn_snap = ctk.CTkButton(frm, text="📸", width=30, height=30, fg_color="transparent",
+                                      text_color=self.TEXT_S, hover_color=self.GRAY_DARK,
+                                      command=lambda x=ip: self.tirar_snapshot(x))
+            btn_snap.pack(side="right", padx=2)
+
+            # Container para o texto (Label)
+            txt_container = ctk.CTkFrame(frm, fg_color="transparent")
+            txt_container.pack(side="left", fill="both", expand=True)
+
+            lbl_nome = ctk.CTkLabel(txt_container, text=nome, font=("Roboto", 13, "bold"), text_color=self.TEXT_P, anchor="w")
+            lbl_nome.pack(fill="x", padx=10, pady=(4, 0))
+            lbl_ip = ctk.CTkLabel(txt_container, text=ip, font=("Roboto", 11), text_color=self.TEXT_S, anchor="w")
+            lbl_ip.pack(fill="x", padx=10, pady=(0, 4))
+
+            for widget in [txt_container, lbl_nome, lbl_ip, lbl_thumb]:
                 widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
                 widget.configure(cursor="hand2")
 
