@@ -299,14 +299,14 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar_visible = True
 
         # --- LAYOUT ATUALIZADO ---
-        self.grid_columnconfigure(0, weight=0) # Sidebar fixa
+        self.grid_columnconfigure(0, weight=1) # Main expande
         self.grid_columnconfigure(1, weight=0) # Botão toggle fixo
-        self.grid_columnconfigure(2, weight=1) # Main expande
+        self.grid_columnconfigure(2, weight=0) # Sidebar fixa
         self.grid_rowconfigure(0, weight=1)
 
-        # 1. Sidebar (Coluna 0)
-        self.sidebar = ctk.CTkFrame(self, width=320, corner_radius=0, fg_color=self.BG_SIDEBAR)
-        self.sidebar.grid(row=0, column=0, sticky="nsew")
+        # 1. Sidebar (Coluna 2)
+        self.sidebar = ctk.CTkFrame(self, width=450, corner_radius=0, fg_color=self.BG_SIDEBAR)
+        self.sidebar.grid(row=0, column=2, sticky="nsew")
 
         # Conteúdo da Sidebar (Câmeras)
         tab_cams = ctk.CTkFrame(self.sidebar, fg_color="transparent")
@@ -336,7 +336,7 @@ class CentralMonitoramento(ctk.CTk):
 
         self.btn_toggle_sidebar = ctk.CTkButton(
             self.container_toggle,
-            text="◀",
+            text="▶",
             width=40,
             corner_radius=0,
             font=("Roboto", 24, "bold"),
@@ -346,10 +346,12 @@ class CentralMonitoramento(ctk.CTk):
             command=self.toggle_sidebar
         )
         self.btn_toggle_sidebar.pack(side="right", fill="y")
+        self.container_toggle.configure(cursor="sb_h_double_arrow")
+        self.container_toggle.bind("<B1-Motion>", self.ao_arrastar_divisor)
 
-        # 3. Main Frame (Coluna 2)
+        # 3. Main Frame (Coluna 0)
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
-        self.main_frame.grid(row=0, column=2, sticky="nsew")
+        self.main_frame.grid(row=0, column=0, sticky="nsew")
 
         # Grid Frame (Câmeras)
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
@@ -441,15 +443,33 @@ class CentralMonitoramento(ctk.CTk):
                 print(f"Erro no processador de conexões: {e}")
                 time.sleep(1)
 
+    # --- LÓGICA DO RESIZE SIDEBAR ---
+    def ao_arrastar_divisor(self, event):
+        if not self.sidebar_visible: return
+
+        # Coordenada X global do mouse
+        x_mouse = event.x_root
+        # Coordenada X da janela principal
+        x_janela = self.winfo_rootx()
+        # Largura total da janela
+        w_janela = self.winfo_width()
+
+        # Nova largura do painel lateral (que está na direita)
+        nova_largura = x_janela + w_janela - x_mouse
+
+        # Limites de segurança
+        if 200 < nova_largura < 800:
+            self.sidebar.configure(width=nova_largura)
+
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
     def toggle_sidebar(self):
         if self.sidebar_visible:
             self.sidebar.grid_forget()
-            self.btn_toggle_sidebar.configure(text="▶")
+            self.btn_toggle_sidebar.configure(text="◀")
             self.sidebar_visible = False
         else:
-            self.sidebar.grid(row=0, column=0, sticky="nsew")
-            self.btn_toggle_sidebar.configure(text="◀")
+            self.sidebar.grid(row=0, column=2, sticky="nsew")
+            self.btn_toggle_sidebar.configure(text="▶")
             self.sidebar_visible = True
 
     # --- LÓGICA PTZ ---
@@ -526,10 +546,10 @@ class CentralMonitoramento(ctk.CTk):
         if hasattr(self, 'btn_sair_fs'): self.btn_sair_fs.destroy()
 
         if self.sidebar_visible:
-            self.sidebar.grid(row=0, column=0, sticky="nsew")
+            self.sidebar.grid(row=0, column=2, sticky="nsew")
         
         self.container_toggle.grid(row=0, column=1, sticky="ns")
-        self.main_frame.grid_configure(column=2, columnspan=1)
+        self.main_frame.grid_configure(column=0, columnspan=1)
         
         self.grid_frame.pack_forget()
         padx_grid = 0 if self.slot_maximized is not None else 0
@@ -1347,7 +1367,7 @@ class CentralMonitoramento(ctk.CTk):
         for ip in self.obter_ips_ordenados():
             nome = self.dados_cameras.get(ip, f"IP {ip}")
             cor = self.ACCENT_WINE if ip == self.ip_selecionado else "transparent"
-            frm = ctk.CTkFrame(self.scroll_frame, height=60, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
+            frm = ctk.CTkFrame(self.scroll_frame, height=85, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
             frm.pack(fill="x", pady=2); frm.pack_propagate(False)
 
             # Thumbnail
@@ -1357,14 +1377,14 @@ class CentralMonitoramento(ctk.CTk):
                 if os.path.exists(caminho):
                     try:
                         pil_img = Image.open(caminho)
-                        thumb_img = ctk.CTkImage(pil_img, size=(60, 45))
+                        thumb_img = ctk.CTkImage(pil_img, size=(90, 68))
                         self.cache_thumbnails[ip] = thumb_img
                     except:
                         thumb_img = self.img_vazia
                 else:
                     thumb_img = self.img_vazia
 
-            lbl_thumb = ctk.CTkLabel(frm, image=thumb_img, text="", width=60, height=45, fg_color="black")
+            lbl_thumb = ctk.CTkLabel(frm, image=thumb_img, text="", width=90, height=68, fg_color="black")
             lbl_thumb.pack(side="left", padx=5)
 
             # Botão de Deletar
