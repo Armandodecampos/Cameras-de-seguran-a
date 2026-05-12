@@ -1374,11 +1374,14 @@ class CentralMonitoramento(ctk.CTk):
             child.destroy()
         self.botoes_referencia = {}
 
-        for ip in self.obter_ips_ordenados():
+        ips = self.obter_ips_ordenados()
+        for i, ip in enumerate(ips):
             nome = self.dados_cameras.get(ip, f"IP {ip}")
             cor = self.ACCENT_WINE if ip == self.ip_selecionado else "transparent"
+            # Adiciona mais padding no último item para não cortar botões no scroll
+            padding_bottom = 20 if i == len(ips) - 1 else 4
             frm = ctk.CTkFrame(self.scroll_frame, fg_color=cor, border_width=2, border_color=self.GRAY_DARK)
-            frm.pack(fill="x", pady=4)
+            frm.pack(fill="x", pady=(4, padding_bottom))
 
             # Thumbnail
             thumb_img = self.cache_thumbnails.get(ip)
@@ -1410,27 +1413,29 @@ class CentralMonitoramento(ctk.CTk):
             lbl_ip = ctk.CTkLabel(bottom_frame, text=ip, font=("Roboto", 12), text_color=self.TEXT_S, anchor="w", justify="left", wraplength=wrap_inicial)
             lbl_ip.pack(fill="x")
 
-            # Container para botões
+            # Container para botões (Centralizado e Padronizado)
             btn_container = ctk.CTkFrame(bottom_frame, fg_color="transparent")
-            btn_container.pack(fill="x", pady=(2, 0))
+            btn_container.pack(fill="x", pady=(10, 2))
+
+            btn_sub = ctk.CTkFrame(btn_container, fg_color="transparent")
+            btn_sub.pack()
+
+            btn_style = {"width": 60, "height": 32, "corner_radius": 4, "fg_color": self.GRAY_DARK, "text_color": self.TEXT_P}
 
             # Botão de Tirar Print
-            btn_snap = ctk.CTkButton(btn_container, text="📸", width=30, height=30, fg_color="transparent",
-                                      text_color=self.TEXT_S, hover_color=self.GRAY_DARK,
+            btn_snap = ctk.CTkButton(btn_sub, text="📸", **btn_style, hover_color=self.ACCENT_WINE,
                                       command=lambda x=ip: self.tirar_snapshot(x))
-            btn_snap.pack(side="left", padx=1)
+            btn_snap.pack(side="left", padx=4)
 
             # Botão de Editar
-            btn_edit = ctk.CTkButton(btn_container, text="✎", width=30, height=30, fg_color="transparent",
-                                      text_color=self.TEXT_S, hover_color=self.GRAY_DARK,
+            btn_edit = ctk.CTkButton(btn_sub, text="✎", **btn_style, hover_color=self.ACCENT_WINE,
                                       command=lambda x=ip: self.alternar_edicao_nome(x))
-            btn_edit.pack(side="left", padx=1)
+            btn_edit.pack(side="left", padx=4)
 
             # Botão de Deletar
-            btn_del = ctk.CTkButton(btn_container, text="X", width=30, height=30, fg_color="transparent",
-                                     text_color=self.TEXT_S, hover_color=self.ACCENT_RED,
+            btn_del = ctk.CTkButton(btn_sub, text="X", **btn_style, hover_color=self.ACCENT_RED,
                                      command=lambda x=ip: self.confirmar_exclusao_camera_da_lista(x))
-            btn_del.pack(side="left", padx=1)
+            btn_del.pack(side="left", padx=4)
 
             for widget in [frm, bottom_frame, lbl_nome, lbl_ip, lbl_thumb]:
                 widget.bind("<Button-1>", lambda e, x=ip: self.selecionar_camera(x))
