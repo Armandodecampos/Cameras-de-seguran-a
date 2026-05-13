@@ -261,6 +261,7 @@ class CentralMonitoramento(ctk.CTk):
         self.arquivo_grid = os.path.join(user_dir, "grid_config_abi.json")
         self.arquivo_janela = os.path.join(user_dir, "config_janela_abi.json")
         self.arquivo_ips = os.path.join(user_dir, "lista_ips_abi.json")
+        self.arquivo_presets = os.path.join(user_dir, "presets_config_abi.json")
         self.diretorio_snapshots = os.path.join(user_dir, "snapshots_abi")
         os.makedirs(self.diretorio_snapshots, exist_ok=True)
 
@@ -285,6 +286,7 @@ class CentralMonitoramento(ctk.CTk):
         self.ips_unicos = self.carregar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.grid_cameras = self.carregar_grid()
+        self.presets_salvos = self.carregar_presets()
 
         # Cache persistente de CTkImage por slot para evitar "pyimage" explosion
         self.slot_ctk_images = [None] * 1
@@ -308,14 +310,24 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self, width=450, corner_radius=0, fg_color=self.BG_SIDEBAR)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
 
+        # Seletor de Abas
+        self.tab_var = ctk.StringVar(value=self.aba_ativa if self.aba_ativa in ["Câmeras", "Presets"] else "Câmeras")
+        self.seg_button = ctk.CTkSegmentedButton(self.sidebar, values=["Câmeras", "Presets"],
+                                                 command=self.mudar_aba_sidebar, variable=self.tab_var,
+                                                 fg_color=self.BG_PANEL, selected_color=self.ACCENT_WINE,
+                                                 unselected_color=self.BG_PANEL, text_color=self.TEXT_P)
+        self.seg_button.pack(fill="x", padx=10, pady=(10, 5))
+
         # Conteúdo da Sidebar (Câmeras)
-        tab_cams = ctk.CTkFrame(self.sidebar, fg_color="transparent")
-        tab_cams.pack(expand=True, fill="both", padx=5, pady=5)
+        self.frame_cameras = ctk.CTkFrame(self.sidebar, fg_color="transparent")
 
-        # Seletor de IP Manual
-        self.criar_seletor_ip(tab_cams)
+        # Conteúdo da Sidebar (Presets)
+        self.frame_presets = ctk.CTkFrame(self.sidebar, fg_color="transparent")
 
-        self.frame_busca = ctk.CTkFrame(tab_cams, fg_color="transparent")
+        # Seletor de IP Manual (Agora dentro de frame_cameras)
+        self.criar_seletor_ip(self.frame_cameras)
+
+        self.frame_busca = ctk.CTkFrame(self.frame_cameras, fg_color="transparent")
         self.frame_busca.pack(fill="x", padx=5, pady=5)
 
         self.entry_busca = ctk.CTkEntry(self.frame_busca, placeholder_text="Filtrar...")
@@ -327,8 +339,11 @@ class CentralMonitoramento(ctk.CTk):
                                           command=self.abrir_modal_adicionar_camera)
         self.btn_add_cam.pack(side="right")
 
-        self.scroll_frame = ctk.CTkScrollableFrame(tab_cams, fg_color="transparent")
+        self.scroll_frame = ctk.CTkScrollableFrame(self.frame_cameras, fg_color="transparent")
         self.scroll_frame.pack(expand=True, fill="both", padx=0, pady=5)
+
+        # Inicializa a aba correta
+        self.mudar_aba_sidebar(self.tab_var.get())
 
         # 2. Container Toggle Sidebar (Coluna 1)
         self.container_toggle = ctk.CTkFrame(self, fg_color=self.BG_PANEL, corner_radius=0)
@@ -754,6 +769,65 @@ class CentralMonitoramento(ctk.CTk):
                 json.dump(self.grid_cameras, f, ensure_ascii=False, indent=4)
         except: pass
 
+    def carregar_presets(self):
+        if os.path.exists(self.arquivo_presets):
+            try:
+                with open(self.arquivo_presets, "r", encoding='utf-8') as f:
+                    return json.load(f)
+            except: pass
+        return {}
+
+    def salvar_presets(self):
+        try:
+            with open(self.arquivo_presets, "w", encoding='utf-8') as f:
+                json.dump(self.presets_salvos, f, ensure_ascii=False, indent=4)
+        except: pass
+
+    def salvar_preset_atual(self, nome=None):
+        if not nome:
+            self.abrir_modal_input("Salvar Preset", "Digite o nome da predefinição:", self.confirmar_salvamento_preset)
+        else:
+            self.confirmar_salvamento_preset(nome)
+
+    def confirmar_salvamento_preset(self, nome):
+        self.presets_salvos[nome] = list(self.grid_cameras)
+        self.salvar_presets()
+        self.atualizar_lista_presets_ui()
+
+    def aplicar_preset(self, nome):
+        if nome in self.presets_salvos:
+            lista_ips = self.presets_salvos[nome]
+            for i, ip in enumerate(lista_ips):
+                if i < len(self.slot_labels):
+                    self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, salvar=False)
+            self.salvar_grid()
+            self.update_idletasks()
+            self.selecionar_slot(self.slot_selecionado)
+
+    def renomear_preset(self, antigo_nome):
+        self.abrir_modal_input("Renomear Preset", f"Novo nome para {antigo_nome}:",
+                               lambda novo: self.confirmar_renomear_preset(antigo_nome, novo),
+                               valor_inicial=antigo_nome)
+
+    def confirmar_renomear_preset(self, antigo, novo):
+        if novo and novo != antigo:
+            if novo in self.presets_salvos:
+                self.abrir_modal_alerta("Erro", f"Já existe uma predefinição chamada '{novo}'.")
+                return
+            self.presets_salvos[novo] = self.presets_salvos.pop(antigo)
+            self.salvar_presets()
+            self.atualizar_lista_presets_ui()
+
+    def confirmar_exclusao_preset(self, nome):
+        self.abrir_modal_confirmacao("Excluir Preset", f"Deseja excluir a predefinição '{nome}'?",
+                                     lambda: self.excluir_preset(nome))
+
+    def excluir_preset(self, nome):
+        if nome in self.presets_salvos:
+            del self.presets_salvos[nome]
+            self.salvar_presets()
+            self.atualizar_lista_presets_ui()
+
     def carregar_grid(self):
         grid = ["0.0.0.0"] * 1
         if os.path.exists(self.arquivo_grid):
@@ -771,6 +845,42 @@ class CentralMonitoramento(ctk.CTk):
             if ip and ip != "0.0.0.0" and ip not in self.camera_handlers:
                 self.iniciar_conexao_assincrona(ip, 101)
 
+    def abrir_modal_input(self, titulo, mensagem, callback, valor_inicial=""):
+        modal = ctk.CTkToplevel(self)
+        modal.title(titulo)
+        modal.geometry("400x250")
+        modal.resizable(False, False)
+        modal.attributes("-topmost", True)
+
+        try:
+            self.update_idletasks()
+            x = self.winfo_x() + (self.winfo_width() // 2) - 200
+            y = self.winfo_y() + (self.winfo_height() // 2) - 125
+            modal.geometry(f"+{x}+{y}")
+        except: pass
+
+        ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, wraplength=320).pack(pady=(30, 10))
+
+        entry = ctk.CTkEntry(modal, width=300)
+        entry.insert(0, valor_inicial)
+        entry.pack(pady=10)
+        entry.focus_set()
+
+        def confirmar():
+            valor = entry.get().strip()
+            if valor:
+                modal.destroy()
+                callback(valor)
+
+        btn_conf = ctk.CTkButton(modal, text="Confirmar", fg_color=self.ACCENT_RED, hover_color=self.ACCENT_WINE,
+                                  corner_radius=0, height=40, command=confirmar)
+        btn_conf.pack(fill="x", padx=40, pady=10)
+
+        btn_canc = ctk.CTkButton(modal, text="Cancelar", fg_color=self.GRAY_DARK, hover_color=self.TEXT_S,
+                                  corner_radius=0, height=40, command=modal.destroy)
+        btn_canc.pack(fill="x", padx=40)
+
+        modal.bind("<Return>", lambda e: confirmar())
 
     def abrir_modal_confirmacao(self, titulo, mensagem, callback_sim):
         modal = ctk.CTkToplevel(self)
@@ -1097,6 +1207,47 @@ class CentralMonitoramento(ctk.CTk):
                     pass
 
         finally: self.after(50, self.loop_exibicao) # Ajustado para 50ms para equilibrar fluidez e CPU
+
+    def mudar_aba_sidebar(self, nova_aba):
+        self.aba_ativa = nova_aba
+        if nova_aba == "Câmeras":
+            self.frame_presets.pack_forget()
+            self.frame_cameras.pack(expand=True, fill="both", padx=5, pady=5)
+        else:
+            self.frame_cameras.pack_forget()
+            self.frame_presets.pack(expand=True, fill="both", padx=5, pady=5)
+            self.atualizar_lista_presets_ui()
+
+    def atualizar_lista_presets_ui(self):
+        for child in self.frame_presets.winfo_children():
+            child.destroy()
+
+        btn_add = ctk.CTkButton(self.frame_presets, text="+ Salvar Configuração Atual",
+                                fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                command=self.salvar_preset_atual)
+        btn_add.pack(fill="x", padx=10, pady=10)
+
+        scroll_p = ctk.CTkScrollableFrame(self.frame_presets, fg_color="transparent")
+        scroll_p.pack(expand=True, fill="both", padx=0, pady=0)
+
+        presets = sorted(self.presets_salvos.keys())
+        for nome in presets:
+            frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
+            frm.pack(fill="x", pady=2, padx=5)
+
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", cursor="hand2")
+            lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
+            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
+
+            # Botão de Editar
+            btn_edit = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
+                                      hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
+            btn_edit.pack(side="left", padx=2)
+
+            # Botão de Deletar
+            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.GRAY_DARK,
+                                     hover_color=self.ACCENT_RED, command=lambda n=nome: self.confirmar_exclusao_preset(n))
+            btn_del.pack(side="left", padx=2)
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
