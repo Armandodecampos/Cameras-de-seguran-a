@@ -138,8 +138,8 @@ class CameraHandler:
                 consecutive_failures = 0
                 now = time.time()
 
-                # Controle de FPS Dinâmico (Reduzido para 7 em background para economizar CPU/Rede mas manter fluidez)
-                target_fps = 25 if self.prioridade else 7
+                # Controle de FPS Dinâmico (Reduzido para 5 em background para economizar CPU/Rede mas manter fluidez)
+                target_fps = 25 if self.prioridade else 5
                 if now - last_process_time < (1.0 / target_fps):
                     continue
 
@@ -228,6 +228,10 @@ class CentralMonitoramento(ctk.CTk):
     TEXT_S = "#9E9E9E"
     GRAY_DARK = "#424242"
 
+    MAX_SLOTS = 16
+    GRID_COLS = 4
+    GRID_ROWS = 4
+
     def __init__(self):
         super().__init__()
 
@@ -289,11 +293,11 @@ class CentralMonitoramento(ctk.CTk):
         self.presets_salvos = self.carregar_presets()
 
         # Cache persistente de CTkImage por slot para evitar "pyimage" explosion
-        self.slot_ctk_images = [None] * 1
+        self.slot_ctk_images = [None] * self.MAX_SLOTS
         # Cache de estado da UI para evitar chamadas redundantes ao Tcl/Tk
-        self.cache_ui_text = [None] * 1
-        self.cache_ui_image = [None] * 1
-        self.cache_ui_size = [None] * 1
+        self.cache_ui_text = [None] * self.MAX_SLOTS
+        self.cache_ui_image = [None] * self.MAX_SLOTS
+        self.cache_ui_size = [None] * self.MAX_SLOTS
         # Imagem 1x1 transparente para resets seguros
         self.img_vazia = ctk.CTkImage(Image.new('RGBA', (1, 1), (0,0,0,0)), size=(1, 1))
 
@@ -311,17 +315,17 @@ class CentralMonitoramento(ctk.CTk):
         self.sidebar.grid(row=0, column=0, sticky="nsew")
 
         # Seletor de Abas
-        self.tab_var = ctk.StringVar(value=self.aba_ativa if self.aba_ativa in ["Câmeras", "Presets"] else "Câmeras")
-        self.seg_button = ctk.CTkSegmentedButton(self.sidebar, values=["Câmeras", "Presets"],
+        self.tab_var = ctk.StringVar(value=self.aba_ativa if self.aba_ativa in ["Câmeras", "Predefinições"] else "Câmeras")
+        self.seg_button = ctk.CTkSegmentedButton(self.sidebar, values=["Câmeras", "Predefinições"],
                                                  command=self.mudar_aba_sidebar, variable=self.tab_var,
                                                  fg_color=self.BG_PANEL, selected_color=self.ACCENT_WINE,
                                                  unselected_color=self.BG_PANEL, text_color=self.TEXT_P)
-        self.seg_button.pack(fill="x", padx=10, pady=(10, 5))
+        self.seg_button.pack(fill="x", padx=10, pady=(15, 5))
 
         # Conteúdo da Sidebar (Câmeras)
         self.frame_cameras = ctk.CTkFrame(self.sidebar, fg_color="transparent")
 
-        # Conteúdo da Sidebar (Presets)
+        # Conteúdo da Sidebar (Predefinições)
         self.frame_presets = ctk.CTkFrame(self.sidebar, fg_color="transparent")
 
         # Seletor de IP Manual (Agora dentro de frame_cameras)
@@ -375,8 +379,8 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=0, pady=0)
 
-        for i in range(1): self.grid_frame.grid_rowconfigure(i, weight=1)
-        for i in range(1): self.grid_frame.grid_columnconfigure(i, weight=1)
+        for i in range(self.GRID_ROWS): self.grid_frame.grid_rowconfigure(i, weight=1)
+        for i in range(self.GRID_COLS): self.grid_frame.grid_columnconfigure(i, weight=1)
 
         # Botões de Controle
         self.frame_controles = ctk.CTkFrame(self.main_frame, height=50, fg_color="transparent")
@@ -389,8 +393,8 @@ class CentralMonitoramento(ctk.CTk):
 
         self.slot_frames = []
         self.slot_labels = []
-        for i in range(1):
-            row, col = 0, 0
+        for i in range(self.MAX_SLOTS):
+            row, col = divmod(i, self.GRID_COLS)
             frm = ctk.CTkFrame(self.grid_frame, fg_color=self.BG_SIDEBAR, corner_radius=2, border_width=4, border_color="black")
             frm.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
             frm.pack_propagate(False)
@@ -550,7 +554,7 @@ class CentralMonitoramento(ctk.CTk):
         self.grid_frame.pack_forget()
         self.grid_frame.pack(expand=True, fill="both", padx=0, pady=0)
         
-        indices_visiveis = [self.slot_maximized] if self.slot_maximized is not None else range(1)
+        indices_visiveis = [self.slot_maximized] if self.slot_maximized is not None else range(self.MAX_SLOTS)
         for i, frm in enumerate(self.slot_frames):
             if i in indices_visiveis:
                 frm.grid_configure(padx=0, pady=0, sticky="nsew")
@@ -581,7 +585,7 @@ class CentralMonitoramento(ctk.CTk):
         pady_grid = 0 if self.slot_maximized is not None else 0
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=padx_grid, pady=pady_grid)
 
-        indices_visiveis = [self.slot_maximized] if self.slot_maximized is not None else range(1)
+        indices_visiveis = [self.slot_maximized] if self.slot_maximized is not None else range(self.MAX_SLOTS)
         for i, frm in enumerate(self.slot_frames):
             if i in indices_visiveis:
                 p = 0 if self.slot_maximized is not None else 1
@@ -602,6 +606,7 @@ class CentralMonitoramento(ctk.CTk):
                     geom = dados.get("geometry")
                     if geom: self.geometry(geom)
                     self.aba_ativa = dados.get("active_tab", "Câmeras")
+                    if self.aba_ativa == "Presets": self.aba_ativa = "Predefinições"
                     self.slot_selecionado = dados.get("slot_selecionado", 0)
             except Exception as e: print(f"Erro ao carregar janela: {e}")
 
@@ -610,7 +615,8 @@ class CentralMonitoramento(ctk.CTk):
             if not self.em_tela_cheia:
                 dados = {
                     "geometry": self.geometry(),
-                    "slot_selecionado": self.slot_selecionado
+                    "slot_selecionado": self.slot_selecionado,
+                    "active_tab": self.tab_var.get() if hasattr(self, 'tab_var') else "Câmeras"
                 }
                 with open(self.arquivo_janela, "w") as f: json.dump(dados, f)
         except Exception as e: print(f"Erro ao salvar janela: {e}")
@@ -671,7 +677,7 @@ class CentralMonitoramento(ctk.CTk):
                 return
 
             # Lógica de Troca (Swap)
-            if 0 <= source_idx < 1 and 0 <= target_idx < 1:
+            if 0 <= source_idx < self.MAX_SLOTS and 0 <= target_idx < self.MAX_SLOTS:
                 ip_src = self.grid_cameras[source_idx]
                 ip_tgt = self.grid_cameras[target_idx]
 
@@ -700,7 +706,7 @@ class CentralMonitoramento(ctk.CTk):
         ip_foco = self.grid_cameras[self.slot_maximized] if self.slot_maximized is not None else None
 
         for i, frm in enumerate(self.slot_frames):
-            row, col = 0, 0
+            row, col = divmod(i, self.GRID_COLS)
             frm.grid_configure(row=row, column=col, rowspan=1, columnspan=1, padx=5, pady=5, sticky="nsew")
             frm.configure(corner_radius=2)
             frm.grid()
@@ -716,7 +722,7 @@ class CentralMonitoramento(ctk.CTk):
     def selecionar_slot(self, index):
 
 
-        if not (0 <= index < 1): return
+        if not (0 <= index < self.MAX_SLOTS): return
 
         # Desliga info de todos os handlers antes de trocar
         for ip_h, h in self.camera_handlers.items():
@@ -785,11 +791,14 @@ class CentralMonitoramento(ctk.CTk):
 
     def salvar_preset_atual(self, nome=None):
         if not nome:
-            self.abrir_modal_input("Salvar Preset", "Digite o nome da predefinição:", self.confirmar_salvamento_preset)
+            self.abrir_modal_input("Salvar Predefinição", "Digite o nome da predefinição:", self.confirmar_salvamento_preset)
         else:
             self.confirmar_salvamento_preset(nome)
 
     def confirmar_salvamento_preset(self, nome):
+        if nome in self.presets_salvos:
+            self.abrir_modal_alerta("Aviso", f"Já existe uma predefinição com o nome '{nome}'.")
+            return
         self.presets_salvos[nome] = list(self.grid_cameras)
         self.salvar_presets()
         self.atualizar_lista_presets_ui()
@@ -805,7 +814,7 @@ class CentralMonitoramento(ctk.CTk):
             self.selecionar_slot(self.slot_selecionado)
 
     def renomear_preset(self, antigo_nome):
-        self.abrir_modal_input("Renomear Preset", f"Novo nome para {antigo_nome}:",
+        self.abrir_modal_input("Renomear Predefinição", f"Novo nome para {antigo_nome}:",
                                lambda novo: self.confirmar_renomear_preset(antigo_nome, novo),
                                valor_inicial=antigo_nome)
 
@@ -819,7 +828,7 @@ class CentralMonitoramento(ctk.CTk):
             self.atualizar_lista_presets_ui()
 
     def confirmar_exclusao_preset(self, nome):
-        self.abrir_modal_confirmacao("Excluir Preset", f"Deseja excluir a predefinição '{nome}'?",
+        self.abrir_modal_confirmacao("Excluir Predefinição", f"Deseja excluir a predefinição '{nome}'?",
                                      lambda: self.excluir_preset(nome))
 
     def excluir_preset(self, nome):
@@ -829,13 +838,13 @@ class CentralMonitoramento(ctk.CTk):
             self.atualizar_lista_presets_ui()
 
     def carregar_grid(self):
-        grid = ["0.0.0.0"] * 1
+        grid = ["0.0.0.0"] * self.MAX_SLOTS
         if os.path.exists(self.arquivo_grid):
             try:
                 with open(self.arquivo_grid, "r", encoding='utf-8') as f:
                     dados = json.load(f)
                     if isinstance(dados, list):
-                        for i in range(min(len(dados), 1)):
+                        for i in range(min(len(dados), self.MAX_SLOTS)):
                             if dados[i]: grid[i] = dados[i]
             except: pass
         return grid
@@ -959,7 +968,7 @@ class CentralMonitoramento(ctk.CTk):
             return None
 
     def atribuir_ip_ao_slot(self, idx, ip, atualizar_ui=True, gerenciar_conexoes=True, salvar=True, forcado=False):
-        if not (0 <= idx < 1): return
+        if not (0 <= idx < self.MAX_SLOTS): return
 
         # Otimização: se o IP for o mesmo, não faz nada (a menos que seja 0.0.0.0 ou forçado)
         if not forcado and ip != "0.0.0.0" and self.grid_cameras[idx] == ip:
@@ -1064,6 +1073,11 @@ class CentralMonitoramento(ctk.CTk):
     def _pos_conexao(self, sucesso, camera_obj, ip, erro=None):
         if sucesso:
             # print(f"LOG: Conexão bem-sucedida com {ip}")
+            # Verifica se o IP ainda é necessário
+            if ip not in self.grid_cameras:
+                camera_obj.parar()
+                return
+
             self.camera_handlers[ip] = camera_obj
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
         else:
@@ -1095,12 +1109,12 @@ class CentralMonitoramento(ctk.CTk):
 
             agora = time.time()
             scaling = self._get_window_scaling()
-            indices_trabalho = [self.slot_maximized] if self.slot_maximized is not None else range(1)
+            indices_trabalho = [self.slot_maximized] if self.slot_maximized is not None else range(self.MAX_SLOTS)
 
             # Mapeia quais IPs estão sendo processados para compartilhar frames se possível (IP -> PIL Image)
             current_ips_pil = {}
 
-            for i in range(1):
+            for i in range(self.MAX_SLOTS):
                 ip = self.grid_cameras[i]
 
                 # Caso o slot deva estar vazio ou não esteja no foco de atualização
@@ -1232,22 +1246,24 @@ class CentralMonitoramento(ctk.CTk):
 
         presets = sorted(self.presets_salvos.keys())
         for nome in presets:
-            frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK)
+            frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK, cursor="hand2")
             frm.pack(fill="x", pady=2, padx=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", cursor="hand2")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
-            lbl.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
-
-            # Botão de Editar
-            btn_edit = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
-                                      hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
-            btn_edit.pack(side="left", padx=2)
 
             # Botão de Deletar
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.GRAY_DARK,
                                      hover_color=self.ACCENT_RED, command=lambda n=nome: self.confirmar_exclusao_preset(n))
-            btn_del.pack(side="left", padx=2)
+            btn_del.pack(side="right", padx=5)
+
+            # Botão de Editar
+            btn_edit = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
+                                      hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
+            btn_edit.pack(side="right", padx=5)
+
+            for widget in [frm, lbl]:
+                widget.bind("<Button-1>", lambda e, n=nome: self.aplicar_preset(n))
 
     def filtrar_lista(self):
         termo = self.entry_busca.get().lower()
