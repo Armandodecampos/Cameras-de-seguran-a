@@ -797,8 +797,13 @@ class CentralMonitoramento(ctk.CTk):
 
     def confirmar_salvamento_preset(self, nome):
         if nome in self.presets_salvos:
-            self.abrir_modal_alerta("Erro", f"Já existe uma predefinição chamada '{nome}'.")
-            return
+            self.abrir_modal_confirmacao("Substituir Predefinição",
+                                         f"Já existe uma predefinição chamada '{nome}'. Deseja substituí-la?",
+                                         lambda: self._executar_salvamento_preset(nome))
+        else:
+            self._executar_salvamento_preset(nome)
+
+    def _executar_salvamento_preset(self, nome):
         self.presets_salvos[nome] = list(self.grid_cameras)
         self.salvar_presets()
         self.atualizar_lista_presets_ui()
@@ -826,11 +831,21 @@ class CentralMonitoramento(ctk.CTk):
     def confirmar_renomear_preset(self, antigo, novo):
         if novo and novo != antigo:
             if novo in self.presets_salvos:
-                self.abrir_modal_alerta("Erro", f"Já existe uma predefinição chamada '{novo}'.")
-                return
+                self.abrir_modal_confirmacao("Mesclar Predefinições",
+                                             f"Já existe uma predefinição chamada '{novo}'. Deseja substituí-la pela predefinição '{antigo}' renomeada?",
+                                             lambda: self._executar_renomear_preset(antigo, novo))
+            else:
+                self._executar_renomear_preset(antigo, novo)
+
+    def _executar_renomear_preset(self, antigo, novo):
+        if antigo in self.presets_salvos:
             self.presets_salvos[novo] = self.presets_salvos.pop(antigo)
-            self.salvar_presets()
-            self.atualizar_lista_presets_ui()
+        else:
+            # Caso o antigo já tenha sido removido por alguma outra ação concorrente
+            # ou se estamos sobrescrevendo sem remover o antigo (o que pop já faz)
+            pass
+        self.salvar_presets()
+        self.atualizar_lista_presets_ui()
 
     def confirmar_exclusao_preset(self, nome):
         self.abrir_modal_confirmacao("Excluir Predefinição", f"Deseja excluir a predefinição '{nome}'?",
@@ -1249,7 +1264,7 @@ class CentralMonitoramento(ctk.CTk):
             frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK, cursor="hand2")
             frm.pack(fill="x", pady=2, padx=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", cursor="hand2")
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
 
             # Botão de Deletar (Empacotado primeiro na direita)
