@@ -286,7 +286,6 @@ class CentralMonitoramento(ctk.CTk):
         self.tecla_pressionada = None
         self.aba_ativa = "Câmeras"
 
-        self.carregar_posicao_janela()
         self.ips_unicos = self.carregar_lista_ips()
         self.dados_cameras = self.carregar_config()
         self.grid_cameras = self.carregar_grid()
@@ -316,6 +315,11 @@ class CentralMonitoramento(ctk.CTk):
 
         # Seletor de Abas
         self.tab_var = ctk.StringVar(value=self.aba_ativa if self.aba_ativa in ["Câmeras", "Predefinições"] else "Câmeras")
+
+        # Chamamos carregar_posicao_janela() DEPOIS de inicializar a tab_var,
+        # para que ela possa ser atualizada pelo arquivo de config se necessário.
+        self.carregar_posicao_janela()
+
         self.seg_button = ctk.CTkSegmentedButton(self.sidebar, values=["Câmeras", "Predefinições"],
                                                  command=self.mudar_aba_sidebar, variable=self.tab_var,
                                                  fg_color=self.BG_PANEL, selected_color=self.ACCENT_WINE,
@@ -605,8 +609,10 @@ class CentralMonitoramento(ctk.CTk):
                     dados = json.load(f)
                     geom = dados.get("geometry")
                     if geom: self.geometry(geom)
-                    self.aba_ativa = dados.get("active_tab", "Câmeras")
-                    if self.aba_ativa == "Presets": self.aba_ativa = "Predefinições"
+                    aba = dados.get("active_tab", "Câmeras")
+                    if aba == "Presets": aba = "Predefinições"
+                    self.aba_ativa = aba
+                    if hasattr(self, 'tab_var'): self.tab_var.set(aba)
                     self.slot_selecionado = dados.get("slot_selecionado", 0)
             except Exception as e: print(f"Erro ao carregar janela: {e}")
 
@@ -615,7 +621,7 @@ class CentralMonitoramento(ctk.CTk):
             if not self.em_tela_cheia:
                 dados = {
                     "geometry": self.geometry(),
-                    "active_tab": self.tab_var.get(),
+                    "active_tab": self.tab_var.get() if hasattr(self, 'tab_var') else "Câmeras",
                     "slot_selecionado": self.slot_selecionado
                 }
                 with open(self.arquivo_janela, "w") as f: json.dump(dados, f)
@@ -795,13 +801,30 @@ class CentralMonitoramento(ctk.CTk):
         else:
             self.confirmar_salvamento_preset(nome)
 
-    def confirmar_salvamento_preset(self, nome):
-        if nome in self.presets_salvos:
-            self.abrir_modal_alerta("Erro", f"Já existe uma predefinição chamada '{nome}'.")
-            return
+    def _executar_salvamento_preset(self, nome):
         self.presets_salvos[nome] = list(self.grid_cameras)
         self.salvar_presets()
         self.atualizar_lista_presets_ui()
+
+    def _executar_renomear_preset(self, antigo, novo):
+        self.presets_salvos[novo] = self.presets_salvos.pop(antigo)
+        self.salvar_presets()
+        self.atualizar_lista_presets_ui()
+
+    def confirmar_salvamento_preset(self, nome):
+        if nome in self.presets_salvos:
+            self.abrir_modal_confirmacao("Sobrescrever", f"Já existe uma predefinição chamada '{nome}'. Deseja sobrescrevê-la?",
+                                         lambda: self._executar_salvamento_preset(nome))
+            return
+        self._executar_salvamento_preset(nome)
+
+    def confirmar_renomear_preset(self, antigo, novo):
+        if novo and novo != antigo:
+            if novo in self.presets_salvos:
+                self.abrir_modal_confirmacao("Mesclar", f"Já existe uma predefinição chamada '{novo}'. Deseja sobrescrevê-la?",
+                                             lambda: self._executar_renomear_preset(antigo, novo))
+                return
+            self._executar_renomear_preset(antigo, novo)
 
     def aplicar_preset(self, nome):
         if nome in self.presets_salvos:
@@ -813,6 +836,7 @@ class CentralMonitoramento(ctk.CTk):
 
             for i, ip in enumerate(full_list):
                 self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, salvar=False)
+                if i % 4 == 0: self.update_idletasks()
 
             self.salvar_grid()
             self.update_idletasks()
@@ -822,15 +846,6 @@ class CentralMonitoramento(ctk.CTk):
         self.abrir_modal_input("Renomear Predefinição", f"Novo nome para {antigo_nome}:",
                                lambda novo: self.confirmar_renomear_preset(antigo_nome, novo),
                                valor_inicial=antigo_nome)
-
-    def confirmar_renomear_preset(self, antigo, novo):
-        if novo and novo != antigo:
-            if novo in self.presets_salvos:
-                self.abrir_modal_alerta("Erro", f"Já existe uma predefinição chamada '{novo}'.")
-                return
-            self.presets_salvos[novo] = self.presets_salvos.pop(antigo)
-            self.salvar_presets()
-            self.atualizar_lista_presets_ui()
 
     def confirmar_exclusao_preset(self, nome):
         self.abrir_modal_confirmacao("Excluir Predefinição", f"Deseja excluir a predefinição '{nome}'?",
@@ -1078,6 +1093,9 @@ class CentralMonitoramento(ctk.CTk):
     def _pos_conexao(self, sucesso, camera_obj, ip, erro=None):
         if sucesso:
             # print(f"LOG: Conexão bem-sucedida com {ip}")
+            if ip not in self.grid_cameras:
+                camera_obj.parar()
+                return
             self.camera_handlers[ip] = camera_obj
             if ip in self.cooldown_conexoes: del self.cooldown_conexoes[ip]
         else:
