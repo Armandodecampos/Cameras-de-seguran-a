@@ -797,8 +797,12 @@ class CentralMonitoramento(ctk.CTk):
 
     def confirmar_salvamento_preset(self, nome):
         if nome in self.presets_salvos:
-            self.abrir_modal_alerta("Erro", f"Já existe uma predefinição chamada '{nome}'.")
-            return
+            self.abrir_modal_confirmacao("Sobrescrever", f"Já existe uma predefinição chamada '{nome}'. Deseja sobrescrevê-la?",
+                                         lambda: self._executar_salvamento_preset(nome))
+        else:
+            self._executar_salvamento_preset(nome)
+
+    def _executar_salvamento_preset(self, nome):
         self.presets_salvos[nome] = list(self.grid_cameras)
         self.salvar_presets()
         self.atualizar_lista_presets_ui()
@@ -812,7 +816,12 @@ class CentralMonitoramento(ctk.CTk):
                 full_list[i] = lista_ips[i]
 
             for i, ip in enumerate(full_list):
-                self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, salvar=False)
+                # Forçamos a atualização para garantir que o preset seja aplicado corretamente
+                self.atribuir_ip_ao_slot(i, ip, atualizar_ui=False, salvar=False, forcado=True)
+
+                # Mantém a UI responsiva durante carregamentos pesados
+                if i % 4 == 0:
+                    self.update_idletasks()
 
             self.salvar_grid()
             self.update_idletasks()
@@ -826,11 +835,17 @@ class CentralMonitoramento(ctk.CTk):
     def confirmar_renomear_preset(self, antigo, novo):
         if novo and novo != antigo:
             if novo in self.presets_salvos:
-                self.abrir_modal_alerta("Erro", f"Já existe uma predefinição chamada '{novo}'.")
-                return
-            self.presets_salvos[novo] = self.presets_salvos.pop(antigo)
-            self.salvar_presets()
-            self.atualizar_lista_presets_ui()
+                self.abrir_modal_confirmacao("Sobrescrever", f"Já existe uma predefinição chamada '{novo}'. Deseja sobrescrevê-la?",
+                                             lambda: self._executar_renomear_preset(antigo, novo))
+            else:
+                self._executar_renomear_preset(antigo, novo)
+
+    def _executar_renomear_preset(self, antigo, novo):
+        if novo in self.presets_salvos:
+            self.presets_salvos.pop(novo, None)
+        self.presets_salvos[novo] = self.presets_salvos.pop(antigo)
+        self.salvar_presets()
+        self.atualizar_lista_presets_ui()
 
     def confirmar_exclusao_preset(self, nome):
         self.abrir_modal_confirmacao("Excluir Predefinição", f"Deseja excluir a predefinição '{nome}'?",
@@ -1249,9 +1264,6 @@ class CentralMonitoramento(ctk.CTk):
             frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK, cursor="hand2")
             frm.pack(fill="x", pady=2, padx=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
-            lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
-
             # Botão de Deletar (Empacotado primeiro na direita)
             btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.GRAY_DARK,
                                      hover_color=self.ACCENT_RED, command=lambda n=nome: self.confirmar_exclusao_preset(n))
@@ -1261,6 +1273,9 @@ class CentralMonitoramento(ctk.CTk):
             btn_edit = ctk.CTkButton(frm, text="✎", width=30, height=30, fg_color=self.GRAY_DARK,
                                       hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
             btn_edit.pack(side="right", padx=2)
+
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
 
             # Binds para clicar em qualquer lugar da entrada aplicar o preset
             for widget in [frm, lbl]:
