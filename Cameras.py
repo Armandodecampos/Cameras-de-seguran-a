@@ -85,11 +85,11 @@ class CameraHandler:
 
                 if hasattr(cv2, 'CAP_PROP_OPEN_TIMEOUT_USEC'):
                     try: self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_USEC, 5000000)
-                    except: pass
+                    except Exception as e: print(f"Erro ao configurar timeout para {self.ip_display}: {e}")
 
                 if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
                     try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
-                    except: pass
+                    except Exception as e: print(f"Erro ao configurar buffersize para {self.ip_display}: {e}")
 
                 if self.cap.isOpened():
                     self.rodando = True
@@ -123,7 +123,7 @@ class CameraHandler:
                         self.cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
                     if hasattr(cv2, 'CAP_PROP_BUFFERSIZE'):
                         try: self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
-                        except: pass
+                        except Exception as e: print(f"Erro ao reconfigurar buffersize para {self.ip_display}: {e}")
                     self.necessita_reconexao = False
                     consecutive_failures = 0
 
@@ -216,7 +216,7 @@ class CentralMonitoramento(ctk.CTk):
     def _get_window_scaling(self):
         try:
             return super()._get_window_scaling()
-        except:
+        except Exception:
             return 1.0
 
     BG_MAIN = "#121212"
@@ -270,6 +270,7 @@ class CentralMonitoramento(ctk.CTk):
         os.makedirs(self.diretorio_snapshots, exist_ok=True)
 
         self.botoes_referencia = {}
+        self.preset_labels_referencia = {}
         self.cache_thumbnails = {}
         self.ip_selecionado = None
         self.camera_handlers = {}
@@ -426,7 +427,7 @@ class CentralMonitoramento(ctk.CTk):
         
         def safe_zoom():
             try: self.state("zoomed")
-            except: pass
+            except Exception: pass
         self.after(200, safe_zoom)
 
         self.loop_exibicao()
@@ -481,14 +482,20 @@ class CentralMonitoramento(ctk.CTk):
         if 200 < nova_largura < 800:
             self.sidebar.configure(width=nova_largura)
 
-            # Atualiza wraplength de todos os labels de nome/IP na lista
+            # Atualiza wraplength de todos os labels de nome/IP na lista (Aba Câmeras)
             for item in self.botoes_referencia.values():
-                # Texto agora fica abaixo da imagem, então pode ocupar quase toda a largura
                 wrap = max(50, nova_largura - 40)
                 try:
                     item['lbl_nome'].configure(wraplength=wrap)
                     item['lbl_ip'].configure(wraplength=wrap)
-                except: pass
+                except Exception: pass
+
+            # Atualiza wraplength dos labels na Aba Predefinições
+            wrap_preset = max(50, nova_largura - 120)
+            for lbl in self.preset_labels_referencia.values():
+                try:
+                    lbl.configure(wraplength=wrap_preset)
+                except Exception: pass
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
     def toggle_sidebar(self):
@@ -773,7 +780,7 @@ class CentralMonitoramento(ctk.CTk):
         try:
             with open(self.arquivo_grid, "w", encoding='utf-8') as f:
                 json.dump(self.grid_cameras, f, ensure_ascii=False, indent=4)
-        except: pass
+        except Exception: pass
 
     def carregar_presets(self):
         if os.path.exists(self.arquivo_presets):
@@ -868,7 +875,7 @@ class CentralMonitoramento(ctk.CTk):
                     if isinstance(dados, list):
                         for i in range(min(len(dados), self.MAX_SLOTS)):
                             if dados[i]: grid[i] = dados[i]
-            except: pass
+            except Exception: pass
         return grid
 
     def alternar_todos_streams(self):
@@ -888,7 +895,7 @@ class CentralMonitoramento(ctk.CTk):
             x = self.winfo_x() + (self.winfo_width() // 2) - 200
             y = self.winfo_y() + (self.winfo_height() // 2) - 125
             modal.geometry(f"+{x}+{y}")
-        except: pass
+        except Exception: pass
 
         ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, wraplength=320).pack(pady=(30, 10))
 
@@ -925,7 +932,7 @@ class CentralMonitoramento(ctk.CTk):
             x = self.winfo_x() + (self.winfo_width() // 2) - 200
             y = self.winfo_y() + (self.winfo_height() // 2) - 100
             modal.geometry(f"+{x}+{y}")
-        except: pass
+        except Exception: pass
 
         ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, wraplength=320).pack(pady=(30, 20))
 
@@ -952,7 +959,7 @@ class CentralMonitoramento(ctk.CTk):
             x = self.winfo_x() + (self.winfo_width() // 2) - 200
             y = self.winfo_y() + (self.winfo_height() // 2) - 90
             modal.geometry(f"+{x}+{y}")
-        except: pass
+        except Exception: pass
 
         ctk.CTkLabel(modal, text=mensagem, font=("Roboto", 14, "bold"), text_color=self.TEXT_P, wraplength=320).pack(pady=(30, 20))
 
@@ -970,7 +977,7 @@ class CentralMonitoramento(ctk.CTk):
             # Destrói o label antigo
             if self.slot_labels[idx]:
                 try: self.slot_labels[idx].destroy()
-                except: pass
+                except Exception: pass
 
             # Cria o novo label
             lbl = ctk.CTkLabel(frm, text=f"Espaço {idx+1}", corner_radius=0)
@@ -1019,7 +1026,7 @@ class CentralMonitoramento(ctk.CTk):
             lbl = self.recriar_label_slot(idx)
             if lbl:
                 try: lbl.configure(text=txt)
-                except: pass
+                except Exception: pass
 
         if atualizar_ui:
             self.update_idletasks()
@@ -1032,7 +1039,7 @@ class CentralMonitoramento(ctk.CTk):
             if ip_antigo and ip_antigo != "0.0.0.0" and ip_antigo != ip and ip_antigo not in self.grid_cameras:
                 if ip_antigo in self.camera_handlers:
                     try: self.camera_handlers[ip_antigo].parar()
-                    except: pass
+                    except Exception: pass
                     del self.camera_handlers[ip_antigo]
 
             if ip != "0.0.0.0":
@@ -1108,7 +1115,7 @@ class CentralMonitoramento(ctk.CTk):
                         self.slot_labels[i].configure(image=None, text=msg)
                         self.slot_labels[i].image = None
                         self.slot_ctk_images[i] = None
-                    except: pass
+                    except Exception: pass
 
     def loop_exibicao(self):
         try:
@@ -1122,7 +1129,7 @@ class CentralMonitoramento(ctk.CTk):
                     else:
                         sucesso, camera_obj, ip = res
                         self._pos_conexao(sucesso, camera_obj, ip)
-                except: pass
+                except Exception: pass
 
             agora = time.time()
             scaling = self._get_window_scaling()
@@ -1148,7 +1155,7 @@ class CentralMonitoramento(ctk.CTk):
                                 self.cache_ui_text[i] = target_text
                                 self.cache_ui_image[i] = self.img_vazia
                                 self.slot_ctk_images[i] = None
-                        except: pass
+                        except Exception: pass
                     continue
 
                 # Verifica erro de conexão
@@ -1166,7 +1173,7 @@ class CentralMonitoramento(ctk.CTk):
                                 self.cache_ui_text[i] = target_status
                                 self.cache_ui_image[i] = self.img_vazia
                                 self.slot_ctk_images[i] = None
-                        except: pass
+                        except Exception: pass
                         continue
 
                 handler = self.camera_handlers.get(ip)
@@ -1252,6 +1259,7 @@ class CentralMonitoramento(ctk.CTk):
     def atualizar_lista_presets_ui(self):
         for child in self.frame_presets.winfo_children():
             child.destroy()
+        self.preset_labels_referencia = {}
 
         btn_add = ctk.CTkButton(self.frame_presets, text="+ Salvar Predefinição Atual",
                                 fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
@@ -1262,6 +1270,8 @@ class CentralMonitoramento(ctk.CTk):
         scroll_p.pack(expand=True, fill="both", padx=0, pady=0)
 
         presets = sorted(self.presets_salvos.keys())
+        wrap_val = max(50, self.sidebar.winfo_width() - 120)
+
         for nome in presets:
             frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK, cursor="hand2")
             frm.pack(fill="x", pady=2, padx=5)
@@ -1276,8 +1286,9 @@ class CentralMonitoramento(ctk.CTk):
                                       hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
             btn_edit.pack(side="right", padx=2, pady=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", justify="left", wraplength=wrap_val)
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
+            self.preset_labels_referencia[nome] = lbl
 
             # Binds para clicar em qualquer lugar da entrada aplicar o preset
             for widget in [frm, lbl]:
@@ -1293,7 +1304,7 @@ class CentralMonitoramento(ctk.CTk):
             if termo in ip or termo in nome: item['frame'].pack(fill="x", pady=2)
         try:
             if hasattr(self.scroll_frame, "_parent_canvas"): self.scroll_frame._parent_canvas.yview_moveto(0)
-        except: pass
+        except Exception: pass
 
     def alternar_edicao_nome(self, ip=None):
         target_ip = ip if ip else self.ip_selecionado
@@ -1330,7 +1341,7 @@ class CentralMonitoramento(ctk.CTk):
             x = self.winfo_x() + (self.winfo_width() // 2) - 200
             y = self.winfo_y() + (self.winfo_height() // 2) - 175
             modal.geometry(f"+{x}+{y}")
-        except: pass
+        except Exception: pass
 
         ctk.CTkLabel(modal, text="Adicionar Nova Câmera", font=("Roboto", 16, "bold")).pack(pady=20)
 
@@ -1400,7 +1411,7 @@ class CentralMonitoramento(ctk.CTk):
                     os.remove(caminho)
                 if ip in self.cache_thumbnails:
                     del self.cache_thumbnails[ip]
-            except: pass
+            except Exception: pass
 
             self.atualizar_lista_cameras_ui()
             self.filtrar_lista()
@@ -1422,7 +1433,7 @@ class CentralMonitoramento(ctk.CTk):
             try:
                 with open(self.arquivo_ips, "r", encoding='utf-8') as f:
                     return json.load(f)
-            except: pass
+            except Exception: pass
         ips = self.gerar_lista_ips()
         self.salvar_lista_ips(ips)
         return ips
@@ -1439,7 +1450,7 @@ class CentralMonitoramento(ctk.CTk):
         if os.path.exists(self.arquivo_config):
             try:
                 with open(self.arquivo_config, "r", encoding='utf-8') as f: return json.load(f)
-            except: pass
+            except Exception: pass
         return {}
 
     def obter_ips_ordenados(self):
@@ -1522,7 +1533,7 @@ class CentralMonitoramento(ctk.CTk):
             if len(partes) == 4:
                 self.ip_seletor_atual = [int(p) for p in partes]
                 self.atualizar_labels_seletor()
-        except:
+        except Exception:
             pass
 
     def tirar_snapshot(self, ip=None):
@@ -1577,7 +1588,7 @@ class CentralMonitoramento(ctk.CTk):
                         pil_img = Image.open(caminho)
                         thumb_img = ctk.CTkImage(pil_img, size=(180, 136))
                         self.cache_thumbnails[ip] = thumb_img
-                    except:
+                    except Exception:
                         thumb_img = self.img_vazia
                 else:
                     thumb_img = self.img_vazia
