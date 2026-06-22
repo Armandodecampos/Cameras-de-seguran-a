@@ -270,6 +270,7 @@ class CentralMonitoramento(ctk.CTk):
         os.makedirs(self.diretorio_snapshots, exist_ok=True)
 
         self.botoes_referencia = {}
+        self.preset_labels_referencia = {}
         self.cache_thumbnails = {}
         self.ip_selecionado = None
         self.camera_handlers = {}
@@ -486,9 +487,21 @@ class CentralMonitoramento(ctk.CTk):
                 # Texto agora fica abaixo da imagem, então pode ocupar quase toda a largura
                 wrap = max(50, nova_largura - 40)
                 try:
-                    item['lbl_nome'].configure(wraplength=wrap)
-                    item['lbl_ip'].configure(wraplength=wrap)
-                except: pass
+                    if item['lbl_nome'].winfo_exists():
+                        item['lbl_nome'].configure(wraplength=wrap)
+                    if item['lbl_ip'].winfo_exists():
+                        item['lbl_ip'].configure(wraplength=wrap)
+                except Exception as e:
+                    print(f"Erro ao atualizar wraplength câmera: {e}")
+
+            # Atualiza wraplength de todos os labels de presets
+            for lbl in self.preset_labels_referencia.values():
+                wrap = max(50, nova_largura - 120)
+                try:
+                    if lbl.winfo_exists():
+                        lbl.configure(wraplength=wrap)
+                except Exception as e:
+                    print(f"Erro ao atualizar wraplength preset: {e}")
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
     def toggle_sidebar(self):
@@ -773,7 +786,8 @@ class CentralMonitoramento(ctk.CTk):
         try:
             with open(self.arquivo_grid, "w", encoding='utf-8') as f:
                 json.dump(self.grid_cameras, f, ensure_ascii=False, indent=4)
-        except: pass
+        except Exception as e:
+            print(f"Erro ao salvar grid: {e}")
 
     def carregar_presets(self):
         if os.path.exists(self.arquivo_presets):
@@ -868,7 +882,8 @@ class CentralMonitoramento(ctk.CTk):
                     if isinstance(dados, list):
                         for i in range(min(len(dados), self.MAX_SLOTS)):
                             if dados[i]: grid[i] = dados[i]
-            except: pass
+            except Exception as e:
+                print(f"Erro ao carregar grid: {e}")
         return grid
 
     def alternar_todos_streams(self):
@@ -1122,7 +1137,8 @@ class CentralMonitoramento(ctk.CTk):
                     else:
                         sucesso, camera_obj, ip = res
                         self._pos_conexao(sucesso, camera_obj, ip)
-                except: pass
+                except Exception as e:
+                    print(f"Erro ao processar conexão na fila: {e}")
 
             agora = time.time()
             scaling = self._get_window_scaling()
@@ -1139,16 +1155,18 @@ class CentralMonitoramento(ctk.CTk):
                     # Segurança: se o slot deveria estar vazio, garante texto e imagem vazia
                     if ip == "0.0.0.0":
                         try:
-                            target_text = f"Espaço {i+1}"
-                            # Verifica se precisa atualizar para evitar cintilação (usando cache)
-                            if (self.cache_ui_text[i] != target_text or
-                                self.cache_ui_image[i] != self.img_vazia):
-                                self.slot_labels[i].configure(image=self.img_vazia, text=target_text)
-                                self.slot_labels[i].image = self.img_vazia
-                                self.cache_ui_text[i] = target_text
-                                self.cache_ui_image[i] = self.img_vazia
-                                self.slot_ctk_images[i] = None
-                        except: pass
+                            if self.slot_labels[i].winfo_exists():
+                                target_text = f"Espaço {i+1}"
+                                # Verifica se precisa atualizar para evitar cintilação (usando cache)
+                                if (self.cache_ui_text[i] != target_text or
+                                    self.cache_ui_image[i] != self.img_vazia):
+                                    self.slot_labels[i].configure(image=self.img_vazia, text=target_text)
+                                    self.slot_labels[i].image = self.img_vazia
+                                    self.cache_ui_text[i] = target_text
+                                    self.cache_ui_image[i] = self.img_vazia
+                                    self.slot_ctk_images[i] = None
+                        except Exception as e:
+                            print(f"Erro ao limpar slot {i}: {e}")
                     continue
 
                 # Verifica erro de conexão
@@ -1252,6 +1270,7 @@ class CentralMonitoramento(ctk.CTk):
     def atualizar_lista_presets_ui(self):
         for child in self.frame_presets.winfo_children():
             child.destroy()
+        self.preset_labels_referencia = {}
 
         btn_add = ctk.CTkButton(self.frame_presets, text="+ Salvar Predefinição Atual",
                                 fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
@@ -1260,6 +1279,9 @@ class CentralMonitoramento(ctk.CTk):
 
         scroll_p = ctk.CTkScrollableFrame(self.frame_presets, fg_color="transparent")
         scroll_p.pack(expand=True, fill="both", padx=0, pady=0)
+
+        # Calcula wraplength inicial
+        wrap_inicial = max(50, self.sidebar.winfo_width() - 120)
 
         presets = sorted(self.presets_salvos.keys())
         for nome in presets:
@@ -1276,8 +1298,10 @@ class CentralMonitoramento(ctk.CTk):
                                       hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
             btn_edit.pack(side="right", padx=2, pady=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", justify="left", wraplength=wrap_inicial)
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
+
+            self.preset_labels_referencia[nome] = lbl
 
             # Binds para clicar em qualquer lugar da entrada aplicar o preset
             for widget in [frm, lbl]:
