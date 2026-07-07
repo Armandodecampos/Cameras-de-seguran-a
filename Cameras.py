@@ -270,6 +270,7 @@ class CentralMonitoramento(ctk.CTk):
         os.makedirs(self.diretorio_snapshots, exist_ok=True)
 
         self.botoes_referencia = {}
+        self.preset_labels_referencia = {}
         self.cache_thumbnails = {}
         self.ip_selecionado = None
         self.camera_handlers = {}
@@ -391,6 +392,11 @@ class CentralMonitoramento(ctk.CTk):
                                         command=lambda: self.tirar_snapshot())
         self.btn_print.pack(side="left", padx=5)
 
+        self.btn_save_grid = ctk.CTkButton(self.frame_controles, text="Salvar Grid 💾",
+                                        fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                        command=lambda: self.salvar_preset_atual())
+        self.btn_save_grid.pack(side="left", padx=5)
+
         self.slot_frames = []
         self.slot_labels = []
         for i in range(self.MAX_SLOTS):
@@ -488,6 +494,12 @@ class CentralMonitoramento(ctk.CTk):
                 try:
                     item['lbl_nome'].configure(wraplength=wrap)
                     item['lbl_ip'].configure(wraplength=wrap)
+                except: pass
+
+            # Atualiza wraplength dos presets
+            for lbl in self.preset_labels_referencia.values():
+                try:
+                    lbl.configure(wraplength=nova_largura - 120)
                 except: pass
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
@@ -1253,6 +1265,8 @@ class CentralMonitoramento(ctk.CTk):
         for child in self.frame_presets.winfo_children():
             child.destroy()
 
+        self.preset_labels_referencia = {}
+
         btn_add = ctk.CTkButton(self.frame_presets, text="+ Salvar Predefinição Atual",
                                 fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
                                 command=self.salvar_preset_atual)
@@ -1261,13 +1275,16 @@ class CentralMonitoramento(ctk.CTk):
         scroll_p = ctk.CTkScrollableFrame(self.frame_presets, fg_color="transparent")
         scroll_p.pack(expand=True, fill="both", padx=0, pady=0)
 
+        # Calcula wraplength inicial
+        wrap_inicial = max(50, self.sidebar.winfo_width() - 120)
+
         presets = sorted(self.presets_salvos.keys())
         for nome in presets:
             frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK, cursor="hand2")
             frm.pack(fill="x", pady=2, padx=5)
 
             # Botão de Deletar (Empacotado primeiro na direita para garantir alinhamento)
-            btn_del = ctk.CTkButton(frm, text="X", width=30, height=30, fg_color=self.GRAY_DARK,
+            btn_del = ctk.CTkButton(frm, text="🗑️", width=30, height=30, fg_color=self.GRAY_DARK,
                                      hover_color=self.ACCENT_RED, command=lambda n=nome: self.confirmar_exclusao_preset(n))
             btn_del.pack(side="right", padx=5, pady=5)
 
@@ -1276,8 +1293,10 @@ class CentralMonitoramento(ctk.CTk):
                                       hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
             btn_edit.pack(side="right", padx=2, pady=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", justify="left", cursor="hand2", wraplength=wrap_inicial)
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
+
+            self.preset_labels_referencia[nome] = lbl
 
             # Binds para clicar em qualquer lugar da entrada aplicar o preset
             for widget in [frm, lbl]:
