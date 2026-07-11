@@ -270,6 +270,7 @@ class CentralMonitoramento(ctk.CTk):
         os.makedirs(self.diretorio_snapshots, exist_ok=True)
 
         self.botoes_referencia = {}
+        self.preset_labels_referencia = {}
         self.cache_thumbnails = {}
         self.ip_selecionado = None
         self.camera_handlers = {}
@@ -375,6 +376,10 @@ class CentralMonitoramento(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
         self.main_frame.grid(row=0, column=2, sticky="nsew")
 
+        # Botões de Controle
+        self.frame_controles = ctk.CTkFrame(self.main_frame, height=50, fg_color="transparent")
+        self.frame_controles.pack(side="bottom", fill="x", padx=10, pady=5)
+
         # Grid Frame (Câmeras)
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=0, pady=0)
@@ -382,14 +387,15 @@ class CentralMonitoramento(ctk.CTk):
         for i in range(self.GRID_ROWS): self.grid_frame.grid_rowconfigure(i, weight=1)
         for i in range(self.GRID_COLS): self.grid_frame.grid_columnconfigure(i, weight=1)
 
-        # Botões de Controle
-        self.frame_controles = ctk.CTkFrame(self.main_frame, height=50, fg_color="transparent")
-        self.frame_controles.pack(side="bottom", fill="x", padx=10, pady=5)
-
         self.btn_print = ctk.CTkButton(self.frame_controles, text="Tirar Foto 📸",
                                         fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
                                         command=lambda: self.tirar_snapshot())
         self.btn_print.pack(side="left", padx=5)
+
+        self.btn_salvar_grid = ctk.CTkButton(self.frame_controles, text="Salvar Grid 💾",
+                                              fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                              command=self.salvar_preset_atual)
+        self.btn_salvar_grid.pack(side="left", padx=5)
 
         self.slot_frames = []
         self.slot_labels = []
@@ -488,6 +494,13 @@ class CentralMonitoramento(ctk.CTk):
                 try:
                     item['lbl_nome'].configure(wraplength=wrap)
                     item['lbl_ip'].configure(wraplength=wrap)
+                except: pass
+
+            # Atualiza wraplength dos nomes das predefinições
+            wrap_presets = max(50, nova_largura - 120)
+            for lbl_preset in self.preset_labels_referencia.values():
+                try:
+                    lbl_preset.configure(wraplength=wrap_presets)
                 except: pass
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
@@ -1252,6 +1265,7 @@ class CentralMonitoramento(ctk.CTk):
     def atualizar_lista_presets_ui(self):
         for child in self.frame_presets.winfo_children():
             child.destroy()
+        self.preset_labels_referencia = {}
 
         btn_add = ctk.CTkButton(self.frame_presets, text="+ Salvar Predefinição Atual",
                                 fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
@@ -1260,6 +1274,9 @@ class CentralMonitoramento(ctk.CTk):
 
         scroll_p = ctk.CTkScrollableFrame(self.frame_presets, fg_color="transparent")
         scroll_p.pack(expand=True, fill="both", padx=0, pady=0)
+
+        # Calcula wraplength inicial
+        wrap_inicial = max(50, self.sidebar.winfo_width() - 120)
 
         presets = sorted(self.presets_salvos.keys())
         for nome in presets:
@@ -1276,8 +1293,10 @@ class CentralMonitoramento(ctk.CTk):
                                       hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
             btn_edit.pack(side="right", padx=2, pady=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", justify="left", wraplength=wrap_inicial)
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
+
+            self.preset_labels_referencia[nome] = lbl
 
             # Binds para clicar em qualquer lugar da entrada aplicar o preset
             for widget in [frm, lbl]:
