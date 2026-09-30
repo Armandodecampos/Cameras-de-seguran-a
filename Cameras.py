@@ -271,6 +271,7 @@ class CentralMonitoramento(ctk.CTk):
 
         self.botoes_referencia = {}
         self.cache_thumbnails = {}
+        self.preset_labels_referencia = {}
         self.ip_selecionado = None
         self.camera_handlers = {}
         self.em_tela_cheia = False
@@ -391,6 +392,11 @@ class CentralMonitoramento(ctk.CTk):
                                         command=lambda: self.tirar_snapshot())
         self.btn_print.pack(side="left", padx=5)
 
+        self.btn_salvar_preset = ctk.CTkButton(self.frame_controles, text="Salvar Predefinição 💾",
+                                               fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                               command=lambda: self.salvar_preset_atual())
+        self.btn_salvar_preset.pack(side="left", padx=5)
+
         self.slot_frames = []
         self.slot_labels = []
         for i in range(self.MAX_SLOTS):
@@ -488,6 +494,11 @@ class CentralMonitoramento(ctk.CTk):
                 try:
                     item['lbl_nome'].configure(wraplength=wrap)
                     item['lbl_ip'].configure(wraplength=wrap)
+                except: pass
+
+            for lbl in self.preset_labels_referencia.values():
+                try:
+                    lbl.configure(wraplength=max(50, nova_largura - 110))
                 except: pass
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
@@ -1252,6 +1263,7 @@ class CentralMonitoramento(ctk.CTk):
     def atualizar_lista_presets_ui(self):
         for child in self.frame_presets.winfo_children():
             child.destroy()
+        self.preset_labels_referencia = {}
 
         btn_add = ctk.CTkButton(self.frame_presets, text="+ Salvar Predefinição Atual",
                                 fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
@@ -1262,6 +1274,7 @@ class CentralMonitoramento(ctk.CTk):
         scroll_p.pack(expand=True, fill="both", padx=0, pady=0)
 
         presets = sorted(self.presets_salvos.keys())
+        wrap_inicial = max(50, self.sidebar.winfo_width() - 110)
         for nome in presets:
             frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK, cursor="hand2")
             frm.pack(fill="x", pady=2, padx=5)
@@ -1276,8 +1289,10 @@ class CentralMonitoramento(ctk.CTk):
                                       hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
             btn_edit.pack(side="right", padx=2, pady=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", justify="left", wraplength=wrap_inicial, cursor="hand2")
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
+
+            self.preset_labels_referencia[nome] = lbl
 
             # Binds para clicar em qualquer lugar da entrada aplicar o preset
             for widget in [frm, lbl]:
