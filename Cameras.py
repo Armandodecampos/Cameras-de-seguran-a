@@ -391,6 +391,11 @@ class CentralMonitoramento(ctk.CTk):
                                         command=lambda: self.tirar_snapshot())
         self.btn_print.pack(side="left", padx=5)
 
+        self.btn_salvar_preset = ctk.CTkButton(self.frame_controles, text="Salvar Predefinição 💾",
+                                                fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                                command=lambda: self.salvar_preset_atual())
+        self.btn_salvar_preset.pack(side="left", padx=5)
+
         self.slot_frames = []
         self.slot_labels = []
         for i in range(self.MAX_SLOTS):
