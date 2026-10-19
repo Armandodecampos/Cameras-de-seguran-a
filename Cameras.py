@@ -1241,6 +1241,8 @@ class CentralMonitoramento(ctk.CTk):
 
     def mudar_aba_sidebar(self, nova_aba):
         self.aba_ativa = nova_aba
+        if hasattr(self, 'tab_var') and self.tab_var.get() != nova_aba:
+            self.tab_var.set(nova_aba)
         if nova_aba == "Câmeras":
             self.frame_presets.pack_forget()
             self.frame_cameras.pack(expand=True, fill="both", padx=5, pady=5)
