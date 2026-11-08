@@ -270,6 +270,7 @@ class CentralMonitoramento(ctk.CTk):
         os.makedirs(self.diretorio_snapshots, exist_ok=True)
 
         self.botoes_referencia = {}
+        self.preset_labels_referencia = []
         self.cache_thumbnails = {}
         self.ip_selecionado = None
         self.camera_handlers = {}
@@ -375,6 +376,10 @@ class CentralMonitoramento(ctk.CTk):
         self.main_frame = ctk.CTkFrame(self, fg_color=self.BG_MAIN, corner_radius=0)
         self.main_frame.grid(row=0, column=2, sticky="nsew")
 
+        # Botões de Controle (Empacotados primeiro no fundo)
+        self.frame_controles = ctk.CTkFrame(self.main_frame, height=50, fg_color="transparent")
+        self.frame_controles.pack(side="bottom", fill="x", padx=10, pady=5)
+
         # Grid Frame (Câmeras)
         self.grid_frame = ctk.CTkFrame(self.main_frame, fg_color="#000000")
         self.grid_frame.pack(side="top", expand=True, fill="both", padx=0, pady=0)
@@ -382,14 +387,15 @@ class CentralMonitoramento(ctk.CTk):
         for i in range(self.GRID_ROWS): self.grid_frame.grid_rowconfigure(i, weight=1)
         for i in range(self.GRID_COLS): self.grid_frame.grid_columnconfigure(i, weight=1)
 
-        # Botões de Controle
-        self.frame_controles = ctk.CTkFrame(self.main_frame, height=50, fg_color="transparent")
-        self.frame_controles.pack(side="bottom", fill="x", padx=10, pady=5)
-
         self.btn_print = ctk.CTkButton(self.frame_controles, text="Tirar Foto 📸",
                                         fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
                                         command=lambda: self.tirar_snapshot())
         self.btn_print.pack(side="left", padx=5)
+
+        self.btn_salvar_preset = ctk.CTkButton(self.frame_controles, text="Salvar Predefinição 💾",
+                                                fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                                command=lambda: self.salvar_preset_atual())
+        self.btn_salvar_preset.pack(side="left", padx=5)
 
         self.slot_frames = []
         self.slot_labels = []
@@ -488,6 +494,12 @@ class CentralMonitoramento(ctk.CTk):
                 try:
                     item['lbl_nome'].configure(wraplength=wrap)
                     item['lbl_ip'].configure(wraplength=wrap)
+                except: pass
+
+            # Atualiza wraplength de todos os labels de presets na lista
+            for lbl_p in self.preset_labels_referencia:
+                try:
+                    lbl_p.configure(wraplength=max(50, nova_largura - 110))
                 except: pass
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
@@ -798,12 +810,15 @@ class CentralMonitoramento(ctk.CTk):
             self.confirmar_salvamento_preset(nome)
 
     def confirmar_salvamento_preset(self, nome):
-        if nome in self.presets_salvos:
+        nome_limpo = str(nome).strip()
+        if not nome_limpo:
+            return
+        if nome_limpo in self.presets_salvos:
             self.abrir_modal_confirmacao("Substituir Predefinição",
-                                         f"A predefinição '{nome}' já existe. Deseja substituí-la?",
-                                         lambda: self._executar_salvamento_preset(nome))
+                                         f"A predefinição '{nome_limpo}' já existe. Deseja substituí-la?",
+                                         lambda: self._executar_salvamento_preset(nome_limpo))
         else:
-            self._executar_salvamento_preset(nome)
+            self._executar_salvamento_preset(nome_limpo)
 
     def _executar_salvamento_preset(self, nome):
         self.presets_salvos[nome] = list(self.grid_cameras)
@@ -833,15 +848,16 @@ class CentralMonitoramento(ctk.CTk):
                                valor_inicial=antigo_nome)
 
     def confirmar_renomear_preset(self, antigo, novo):
-        if not novo or novo == antigo:
+        novo_limpo = str(novo).strip() if novo else ""
+        if not novo_limpo or novo_limpo == antigo:
             return
 
-        if novo in self.presets_salvos:
+        if novo_limpo in self.presets_salvos:
             self.abrir_modal_confirmacao("Substituir Predefinição",
-                                         f"Já existe uma predefinição chamada '{novo}'. Deseja substituí-la?",
-                                         lambda: self._executar_renomear_preset(antigo, novo))
+                                         f"Já existe uma predefinição chamada '{novo_limpo}'. Deseja substituí-la?",
+                                         lambda: self._executar_renomear_preset(antigo, novo_limpo))
         else:
-            self._executar_renomear_preset(antigo, novo)
+            self._executar_renomear_preset(antigo, novo_limpo)
 
     def _executar_renomear_preset(self, antigo, novo):
         if antigo in self.presets_salvos:
@@ -1252,6 +1268,7 @@ class CentralMonitoramento(ctk.CTk):
     def atualizar_lista_presets_ui(self):
         for child in self.frame_presets.winfo_children():
             child.destroy()
+        self.preset_labels_referencia = []
 
         btn_add = ctk.CTkButton(self.frame_presets, text="+ Salvar Predefinição Atual",
                                 fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
@@ -1260,6 +1277,11 @@ class CentralMonitoramento(ctk.CTk):
 
         scroll_p = ctk.CTkScrollableFrame(self.frame_presets, fg_color="transparent")
         scroll_p.pack(expand=True, fill="both", padx=0, pady=0)
+
+        largura_sidebar = self.sidebar.winfo_width()
+        if largura_sidebar <= 100:
+            largura_sidebar = 450
+        wrap_inicial = max(50, largura_sidebar - 110)
 
         presets = sorted(self.presets_salvos.keys())
         for nome in presets:
@@ -1276,8 +1298,10 @@ class CentralMonitoramento(ctk.CTk):
                                       hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
             btn_edit.pack(side="right", padx=2, pady=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", justify="left", wraplength=wrap_inicial)
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
+
+            self.preset_labels_referencia.append(lbl)
 
             # Binds para clicar em qualquer lugar da entrada aplicar o preset
             for widget in [frm, lbl]:
