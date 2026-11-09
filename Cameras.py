@@ -285,6 +285,8 @@ class CentralMonitoramento(ctk.CTk):
         self.cooldown_conexoes = {}
         self.tecla_pressionada = None
         self.aba_ativa = "Câmeras"
+        self.preset_ativo = None
+        self.preset_labels_referencia = []
 
         self.carregar_posicao_janela()
         self.ips_unicos = self.carregar_lista_ips()
@@ -391,6 +393,11 @@ class CentralMonitoramento(ctk.CTk):
                                         command=lambda: self.tirar_snapshot())
         self.btn_print.pack(side="left", padx=5)
 
+        self.btn_salvar_preset = ctk.CTkButton(self.frame_controles, text="Salvar Predefinição 💾",
+                                               fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
+                                               command=self.salvar_preset_atual)
+        self.btn_salvar_preset.pack(side="left", padx=5)
+
         self.slot_frames = []
         self.slot_labels = []
         for i in range(self.MAX_SLOTS):
@@ -488,6 +495,13 @@ class CentralMonitoramento(ctk.CTk):
                 try:
                     item['lbl_nome'].configure(wraplength=wrap)
                     item['lbl_ip'].configure(wraplength=wrap)
+                except: pass
+
+            # Atualiza wraplength dos labels de predefinições
+            wrap_preset = max(50, nova_largura - 110)
+            for lbl_p in self.preset_labels_referencia:
+                try:
+                    lbl_p.configure(wraplength=wrap_preset)
                 except: pass
 
     # --- LÓGICA DO TOGGLE DA SIDEBAR ---
@@ -798,6 +812,9 @@ class CentralMonitoramento(ctk.CTk):
             self.confirmar_salvamento_preset(nome)
 
     def confirmar_salvamento_preset(self, nome):
+        nome = (nome or "").strip()
+        if not nome:
+            return
         if nome in self.presets_salvos:
             self.abrir_modal_confirmacao("Substituir Predefinição",
                                          f"A predefinição '{nome}' já existe. Deseja substituí-la?",
@@ -807,11 +824,13 @@ class CentralMonitoramento(ctk.CTk):
 
     def _executar_salvamento_preset(self, nome):
         self.presets_salvos[nome] = list(self.grid_cameras)
+        self.preset_ativo = nome
         self.salvar_presets()
         self.atualizar_lista_presets_ui()
 
     def aplicar_preset(self, nome):
         if nome in self.presets_salvos:
+            self.preset_ativo = nome
             lista_ips = self.presets_salvos[nome]
             # Garante que a lista tenha MAX_SLOTS elementos
             full_list = ["0.0.0.0"] * self.MAX_SLOTS
@@ -826,6 +845,7 @@ class CentralMonitoramento(ctk.CTk):
             self.salvar_grid()
             self.update_idletasks()
             self.selecionar_slot(self.slot_selecionado)
+            self.atualizar_lista_presets_ui()
 
     def renomear_preset(self, antigo_nome):
         self.abrir_modal_input("Renomear Predefinição", f"Novo nome para {antigo_nome}:",
@@ -833,6 +853,7 @@ class CentralMonitoramento(ctk.CTk):
                                valor_inicial=antigo_nome)
 
     def confirmar_renomear_preset(self, antigo, novo):
+        novo = (novo or "").strip()
         if not novo or novo == antigo:
             return
 
@@ -846,6 +867,8 @@ class CentralMonitoramento(ctk.CTk):
     def _executar_renomear_preset(self, antigo, novo):
         if antigo in self.presets_salvos:
             self.presets_salvos[novo] = self.presets_salvos.pop(antigo)
+            if self.preset_ativo == antigo:
+                self.preset_ativo = novo
             self.salvar_presets()
             self.atualizar_lista_presets_ui()
 
@@ -856,6 +879,8 @@ class CentralMonitoramento(ctk.CTk):
     def excluir_preset(self, nome):
         if nome in self.presets_salvos:
             del self.presets_salvos[nome]
+            if self.preset_ativo == nome:
+                self.preset_ativo = None
             self.salvar_presets()
             self.atualizar_lista_presets_ui()
 
@@ -1252,6 +1277,7 @@ class CentralMonitoramento(ctk.CTk):
     def atualizar_lista_presets_ui(self):
         for child in self.frame_presets.winfo_children():
             child.destroy()
+        self.preset_labels_referencia = []
 
         btn_add = ctk.CTkButton(self.frame_presets, text="+ Salvar Predefinição Atual",
                                 fg_color=self.ACCENT_WINE, hover_color=self.ACCENT_RED,
@@ -1261,9 +1287,16 @@ class CentralMonitoramento(ctk.CTk):
         scroll_p = ctk.CTkScrollableFrame(self.frame_presets, fg_color="transparent")
         scroll_p.pack(expand=True, fill="both", padx=0, pady=0)
 
+        # Determina wraplength inicial baseado na largura da sidebar
+        largura_sidebar = self.sidebar.winfo_width()
+        if largura_sidebar <= 100:
+            largura_sidebar = 450
+        wrap_inicial = max(50, largura_sidebar - 110)
+
         presets = sorted(self.presets_salvos.keys())
         for nome in presets:
-            frm = ctk.CTkFrame(scroll_p, fg_color="transparent", border_width=1, border_color=self.GRAY_DARK, cursor="hand2")
+            cor_bg = self.ACCENT_WINE if nome == self.preset_ativo else "transparent"
+            frm = ctk.CTkFrame(scroll_p, fg_color=cor_bg, border_width=1, border_color=self.GRAY_DARK, cursor="hand2")
             frm.pack(fill="x", pady=2, padx=5)
 
             # Botão de Deletar (Empacotado primeiro na direita para garantir alinhamento)
@@ -1276,8 +1309,10 @@ class CentralMonitoramento(ctk.CTk):
                                       hover_color=self.ACCENT_WINE, command=lambda n=nome: self.renomear_preset(n))
             btn_edit.pack(side="right", padx=2, pady=5)
 
-            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w")
+            lbl = ctk.CTkLabel(frm, text=nome, font=("Roboto", 14), anchor="w", justify="left",
+                               wraplength=wrap_inicial, cursor="hand2")
             lbl.pack(side="left", fill="x", expand=True, padx=10, pady=10)
+            self.preset_labels_referencia.append(lbl)
 
             # Binds para clicar em qualquer lugar da entrada aplicar o preset
             for widget in [frm, lbl]:
